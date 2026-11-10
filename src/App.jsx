@@ -431,35 +431,35 @@ export default function App() {
   }
 
   async function updateStoreStatus(id, status) {
-    const { error } = await supabase.rpc('admin_set_store_status', { p_store_id: id, p_status: status });
+    const { error } = await supabase.functions.invoke('admin-operations', { body: { action: 'set_store_status', store_id: id, status } });
     if (error) return setNotice(error.message);
     setNotice('Statut de la boutique mis à jour.');
     await loadMemberData(user);
   }
 
   async function updateAdminStoreProduct(id, status) {
-    const { error } = await supabase.from('store_products').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.functions.invoke('admin-operations', { body: { action: 'publish_store_product', product_id: id, status } });
     if (error) return setNotice(error.message);
     setNotice('Publication du produit mise à jour.');
     await loadMemberData(user);
   }
 
   async function updateAdminOrder(id, status) {
-    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.functions.invoke('admin-operations', { body: { action: 'update_order_status', order_id: id, status } });
     if (error) return setNotice(error.message);
     setNotice('Statut de commande mis à jour.');
     await loadMemberData(user);
   }
 
   async function reviewSellerApplication(id, status) {
-    const { error } = await supabase.rpc('review_seller_application', { p_application_id: id, p_status: status });
+    const { error } = await supabase.functions.invoke('admin-operations', { body: { action: 'review_seller_application', application_id: id, status } });
     if (error) return setNotice(error.message);
     setNotice(status === 'approved' ? 'Candidature acceptée et accès vendeur activé.' : 'Candidature refusée.');
     await loadMemberData(user);
   }
 
   async function reviewSupplierApplication(id, status) {
-    const { error } = await supabase.rpc('review_supplier_application', { p_application_id: id, p_status: status });
+    const { error } = await supabase.functions.invoke('admin-operations', { body: { action: 'review_supplier_application', application_id: id, status } });
     if (error) return setNotice(error.message);
     setNotice(status === 'approved' ? 'Fournisseur accepté.' : 'Candidature fournisseur refusée.');
     await loadMemberData(user);
@@ -468,14 +468,14 @@ export default function App() {
   async function saveCargoAdminDetails(id, event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.from('cargo_requests').update({
+    const { error } = await supabase.functions.invoke('admin-operations', { body: {
+      action: 'update_cargo_request', request_id: id,
       status: String(form.get('status') || 'submitted'),
       cargo_partner_id: String(form.get('cargo_partner_id') || '') || null,
-      quoted_price_xof: String(form.get('quoted_price_xof') || '') ? Number(form.get('quoted_price_xof')) : null,
-      tracking_reference: String(form.get('tracking_reference') || '').trim() || null,
-      partner_notes: String(form.get('partner_notes') || '').trim() || null,
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
+      quoted_price_xof: String(form.get('quoted_price_xof') || ''),
+      tracking_reference: String(form.get('tracking_reference') || '').trim(),
+      partner_notes: String(form.get('partner_notes') || '').trim()
+    }});
     if (error) return setNotice(error.message);
     setNotice('Informations de transport mises à jour.');
     await loadMemberData(user);
