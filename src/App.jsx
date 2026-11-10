@@ -719,6 +719,6 @@ export default function App() {
       </section>
     </div></main>}
 
-    <footer className="footer"><div className="wrap footer-inner"><a className="brand footer-brand" href="#home"><span className="brand-icon">C<span>G</span></span><span>China<span>Go</span><small>IMPORT · SHOP · SELL</small></span></a><p>Votre partenaire pour acheter, importer et développer votre commerce entre la Chine et l’Afrique.</p><small>© 2026 ChinaGo. Les intégrations fournisseurs et paiements seront activées après validation des accès officiels.</small></div></footer>
+    <footer className="footer"><div className="wrap footer-inner"><a className="brand footer-brand" href="#home"><span className="brand-icon">C<span>G</span></span><span>China<span>Go</span><small>IMPORT · SHOP · SELL</small></span></a><p>Votre partenaire pour acheter, importer et développer votre commerce entre la Chine et l’Afrique.</p><small>© 2026 ChinaGo. Les intégrations fournisseurs et paiements seront activées après validation des accès officiels.</small><a className="cg-admin-access" href="/?admin=1">Accès administration</a></div></footer>
   </div>;
 }
