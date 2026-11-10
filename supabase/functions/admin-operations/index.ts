@@ -316,6 +316,29 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       });
     }
 
+    if (body.action === 'update_customer_payment_status') {
+      if (!['pending','confirmed','failed','refunded'].includes(body.status)) return json({ error: 'Statut de paiement invalide.' }, 400);
+      const { data: payment, error: paymentReadError } = await admin.from('payment_transactions')
+        .select('id,user_id,order_id,amount_xof').eq('id', body.payment_id).single();
+      if (paymentReadError || !payment) return json({ error: 'Paiement introuvable.' }, 404);
+      const { error: paymentUpdateError } = await admin.from('payment_transactions').update({
+        status: body.status, paid_at: body.status === 'confirmed' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      }).eq('id', payment.id);
+      if (paymentUpdateError) return json({ error: paymentUpdateError.message }, 400);
+      let supplierAutomation = null;
+      if (body.status === 'confirmed' && payment.order_id) {
+        const { data: order, error: orderError } = await admin.from('orders').select('id,order_number,customer_id').eq('id', payment.order_id).single();
+        if (!orderError && order) {
+          await admin.from('orders').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', order.id);
+          await admin.from('notifications').insert({ user_id: order.customer_id, title: 'Paiement confirmé', body: 'Votre paiement pour la commande ' + order.order_number + ' est confirmé. ChinaGo prépare la commande auprès du fournisseur.', kind: 'order' });
+          try { supplierAutomation = await prepareSupplierOrderMessages(admin, order.id, order.order_number); }
+          catch (automationError) { supplierAutomation = { error: automationError instanceof Error ? automationError.message : 'Préparation fournisseur impossible.' }; }
+        }
+      }
+      return json({ ok: true, supplierAutomation });
+    }
+
     if (body.action === 'save_supplier_contact') {
       const companyName = String(body.company_name || '').trim();
       if (!companyName) return json({ error: 'Le nom du fournisseur est obligatoire.' }, 400);
