@@ -68,17 +68,25 @@ export default function App() {
 
   const loadPublicProducts = useCallback(async () => {
     if (!supabase) return;
-    const [productResult, categoryResult, cargoResult] = await Promise.all([
+    const [productResult, categoryResult, cargoResult, storeProductResult] = await Promise.all([
       supabase.from('products')
         .select('id,title,description,source_url,price_xof,currency,is_winner,is_featured,category_id,categories(name),product_images(image_url,alt_text)')
         .eq('status', 'active').order('created_at', { ascending: false }),
       supabase.from('categories').select('id,name,slug').eq('is_active', true).order('sort_order'),
-      supabase.from('cargo_partners').select('id,name,service_type,origin_cities,destination_cities,whatsapp_phone,pricing_notes,estimated_days_min,estimated_days_max,instructions').eq('is_active', true).order('name')
+      supabase.from('cargo_partners').select('id,name,service_type,origin_cities,destination_cities,whatsapp_phone,pricing_notes,estimated_days_min,estimated_days_max,instructions').eq('is_active', true).order('name'),
+      supabase.from('store_products').select('id,title,description,source_url,image_url,selling_price_xof,store_id,stores(name)').eq('status', 'published').order('created_at', { ascending: false })
     ]);
     if (productResult.error) console.error('Catalogue:', productResult.error.message);
     if (categoryResult.error) console.error('Catégories:', categoryResult.error.message);
     if (cargoResult.error) console.error('Partenaires cargo:', cargoResult.error.message);
-    setProducts(productResult.data || []);
+    if (storeProductResult.error) console.error('Produits des boutiques:', storeProductResult.error.message);
+    const storeListings = (storeProductResult.data || []).map(item => ({
+      id: 'store-' + item.id, store_product_id: item.id, store_name: item.stores?.name || 'Boutique partenaire',
+      title: item.title, description: item.description, source_url: item.source_url,
+      price_xof: item.selling_price_xof, currency: 'XOF', is_winner: false, is_featured: false,
+      category_id: null, product_images: item.image_url ? [{ image_url: item.image_url, alt_text: item.title }] : []
+    }));
+    setProducts([...(productResult.data || []), ...storeListings]);
     setCategories(categoryResult.data || []);
     setCargoPartners(cargoResult.data || []);
   }, []);
@@ -295,8 +303,8 @@ export default function App() {
     setBusy(true);
     const selectedPartner = cargoPartners.find(p => p.id === orderForm.cargo_partner_id);
     const { data, error } = await supabase.rpc('request_order', {
-      p_product_id: orderDraft?.id || null,
-      p_store_product_id: null,
+      p_product_id: orderDraft?.store_product_id ? null : orderDraft?.id || null,
+      p_store_product_id: orderDraft?.store_product_id || null,
       p_product_title: orderForm.product_title.trim(),
       p_source_url: orderForm.source_url.trim(),
       p_quantity: Number(orderForm.quantity || 1),
@@ -513,12 +521,12 @@ export default function App() {
     return <article className="cg-product" key={p.id}>
       <button className="cg-product-image" onClick={() => setSelectedProduct(p)} aria-label={'Voir ' + p.title}>
         {image ? <img src={image} alt={p.product_images?.[0]?.alt_text || p.title}/> : <span className="cg-no-image"><Package size={38}/></span>}
-        {p.is_winner && <span className="cg-product-tag">Produit tendance</span>}
+        {p.is_winner ? <span className="cg-product-tag">Produit tendance</span> : p.store_product_id ? <span className="cg-product-tag">Boutique partenaire</span> : null}
       </button>
       <div className="cg-product-body">
         <h3>{p.title}</h3><p>{p.description || 'Produit sélectionné par ChinaGo.'}</p>
         <div className="cg-product-bottom"><strong>{p.price_xof ? money(p.price_xof) : 'Prix sur demande'}</strong>
-          <button className="cg-icon-button" onClick={() => toggleFavorite(p.id)} aria-label="Ajouter aux favoris"><Heart size={18} fill={favorites.includes(p.id) ? 'currentColor' : 'none'}/></button>
+          {!p.store_product_id && <button className="cg-icon-button" onClick={() => toggleFavorite(p.id)} aria-label="Ajouter aux favoris"><Heart size={18} fill={favorites.includes(p.id) ? 'currentColor' : 'none'}/></button>}
         </div>
         <button className="cg-text-button" onClick={() => setSelectedProduct(p)}>Voir les détails <ArrowRight size={15}/></button>
       </div>
