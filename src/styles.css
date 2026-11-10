@@ -54,3 +54,15 @@
 @media(max-width:680px){.cg-admin-order-row{align-items:flex-start;flex-wrap:wrap}.cg-admin-order-row select{max-width:100%;width:100%}.cg-admin-order-row>span{width:100%}}
 
 .cg-admin-wa{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:10px;justify-self:start;grid-column:1/-1}
+
+
+.cg-admin-import-row{border-top:1px solid #edf1f5;padding:14px 0}
+.cg-admin-import-row>div>b,.cg-admin-import-row>div>small{display:block}
+.cg-admin-import-row>div>b{font-size:12px;color:var(--navy)}
+.cg-admin-import-row>div>small{font-size:10px;color:#8493a2;margin-top:5px;overflow-wrap:anywhere}
+.cg-admin-import-form,.cg-admin-quote-form{display:grid;gap:10px;margin-top:12px;padding:13px;background:#f7f9fb;border-radius:10px}
+.cg-admin-import-form label,.cg-admin-quote-form label{display:grid;gap:5px;color:#607286;font-size:10px;font-weight:700}
+.cg-admin-import-form input,.cg-admin-import-form select,.cg-admin-import-form textarea,.cg-admin-quote-form input,.cg-admin-quote-form select{width:100%;min-width:0;border:1px solid #dfe6ed;border-radius:8px;padding:9px;background:#fff;color:var(--navy);font:inherit}
+.cg-admin-import-form textarea{min-height:60px}
+.cg-admin-import-form button,.cg-admin-quote-form button{justify-self:start}
+.cg-admin-quote-form>small{font-size:10px;color:#8291a0}
