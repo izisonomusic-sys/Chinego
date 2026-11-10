@@ -115,3 +115,8 @@ select s.id,s.company_name,s.contact_name,s.email,s.phone,s.country,s.website_ur
 from public.supplier_applications s
 where not exists(select 1 from public.supplier_contacts c where c.supplier_application_id=s.id)
 on conflict (supplier_application_id) do nothing;
+
+create index if not exists products_supplier_contact_id_idx on public.products(supplier_contact_id);
+create index if not exists supplier_contacts_created_by_idx on public.supplier_contacts(created_by);
+create index if not exists supplier_order_messages_supplier_contact_id_idx on public.supplier_order_messages(supplier_contact_id);
+create index if not exists supplier_payments_supplier_contact_id_idx on public.supplier_payments(supplier_contact_id);
