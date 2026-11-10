@@ -1,4 +1,5 @@
 -- ChinaGo: self-service seller onboarding, supplier directory, product specs and AI supplier messaging.
+alter table public.supplier_applications add column if not exists whatsapp text, add column if not exists whatsapp_opt_in boolean not null default false;
 alter table public.products
   add column if not exists sku text,
   add column if not exists brand text,
@@ -70,9 +71,9 @@ begin
     update public.profiles set role='supplier',updated_at=now() where id=new.user_id;
     update public.supplier_applications set status='approved' where id=new.id;
     insert into public.supplier_contacts(
-      supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by
+      supplier_application_id,company_name,contact_name,email,phone,whatsapp,country,website_url,whatsapp_opt_in,notes,created_by
     ) values (
-      new.id,new.company_name,new.contact_name,new.email,new.phone,new.country,new.website_url,new.message,new.user_id
+      new.id,new.company_name,new.contact_name,new.email,new.phone,new.whatsapp,new.country,new.website_url,new.whatsapp_opt_in,new.message,new.user_id
     ) on conflict (supplier_application_id) do nothing;
   end if;
   return new;
@@ -110,8 +111,8 @@ from (select distinct on(user_id) user_id from public.supplier_applications orde
 where p.id=a.user_id and p.role<>'admin';
 update public.stores set status='active',updated_at=now() where status='draft';
 
-insert into public.supplier_contacts(supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by)
-select s.id,s.company_name,s.contact_name,s.email,s.phone,s.country,s.website_url,s.message,s.user_id
+insert into public.supplier_contacts(supplier_application_id,company_name,contact_name,email,phone,whatsapp,country,website_url,whatsapp_opt_in,notes,created_by)
+select s.id,s.company_name,s.contact_name,s.email,s.phone,s.whatsapp,s.country,s.website_url,s.whatsapp_opt_in,s.message,s.user_id
 from public.supplier_applications s
 where not exists(select 1 from public.supplier_contacts c where c.supplier_application_id=s.id)
 on conflict (supplier_application_id) do nothing;
