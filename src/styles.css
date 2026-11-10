@@ -199,3 +199,10 @@
 .ca-supplier-card{display:grid;gap:5px;padding:12px 0;border-bottom:1px solid #edf1f5}
 .ca-supplier-card>b{font:800 12px Manrope;color:#0b2d5b}
 .ca-supplier-card>small{font-size:10px;color:#718297;line-height:1.55;overflow-wrap:anywhere}
+
+.cg-product-specs{margin:14px 0;padding:13px;background:#f5f7f9;border-radius:11px}
+.cg-product-specs>b{display:block;font:800 12px Manrope;color:#0b2d5b;margin-bottom:10px}
+.cg-product-spec-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.cg-product-spec-grid span{padding:8px;background:#fff;border-radius:7px;font-size:9px;color:#7b8da0;overflow-wrap:anywhere}
+.cg-product-spec-grid b{display:block;font-size:11px;color:#23415f;margin-top:4px}
+.cg-product-specs>p,.cg-product-specs ul{font-size:10px;color:#63758a;line-height:1.6}
