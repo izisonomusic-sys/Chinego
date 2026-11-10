@@ -370,6 +370,15 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       return json({ ok: true, supplier: data });
     }
 
+    if (body.action === 'update_supplier_contact') {
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (typeof body.whatsapp_opt_in === 'boolean') updates.whatsapp_opt_in = body.whatsapp_opt_in;
+      if (['active','inactive'].includes(body.status)) updates.status = body.status;
+      const { error } = await admin.from('supplier_contacts').update(updates).eq('id', body.supplier_contact_id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
     if (body.action === 'save_supplier_payment') {
       const amount = Number(body.amount);
       if (!String(body.supplier_name || '').trim() || !Number.isFinite(amount) || amount < 0) return json({ error: 'Fournisseur et montant valides obligatoires.' }, 400);
