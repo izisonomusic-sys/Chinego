@@ -62,20 +62,20 @@ create or replace function public.activate_business_account_on_application()
 returns trigger language plpgsql security definer set search_path=''
 as $$
 begin
-  update public.profiles
-  set role = case when tg_table_name='seller_applications'
-    then case when new.account_type='dropshipper' then 'dropshipper' else 'seller' end
-    else 'supplier' end,
-    updated_at=now()
-  where id=new.user_id;
-  new.status := 'approved';
-  if tg_table_name='supplier_applications' then
+  if tg_table_name='seller_applications' then
+    update public.profiles
+      set role=case when new.account_type='dropshipper' then 'dropshipper' else 'seller' end,
+          updated_at=now()
+      where id=new.user_id;
+  else
+    update public.profiles set role='supplier',updated_at=now() where id=new.user_id;
     insert into public.supplier_contacts(
       supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by
     ) values (
       new.id,new.company_name,new.contact_name,new.email,new.phone,new.country,new.website_url,new.message,new.user_id
     ) on conflict (supplier_application_id) do nothing;
   end if;
+  new.status := 'approved';
   return new;
 end;
 $$;
