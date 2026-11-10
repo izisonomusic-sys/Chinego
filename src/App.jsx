@@ -78,7 +78,7 @@ export default function App() {
 
   const loadMemberData = useCallback(async currentUser => {
     if (!supabase || !currentUser) return;
-    const [p, f, i, n, o, a, sa, s] = await Promise.all([
+    const [p, f, i, n, o, a, sa, s, cr] = await Promise.all([
       supabase.from('profiles').select('id,full_name,phone,role').eq('id', currentUser.id).maybeSingle(),
       supabase.from('product_favorites').select('product_id').eq('user_id', currentUser.id),
       supabase.from('import_requests').select('id,source_url,source_platform,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
@@ -93,7 +93,10 @@ export default function App() {
     setFavorites((f.data || []).map(x => x.product_id));
     setImports(i.data || []); setNotifications(n.data || []); setOrders(o.data || []);
     setApplications(a.data || []); setSupplierApplications(sa.data || []); setStores(s.data || []);
-    setCargoRequests(s.data?.length || p.data?.role === 'admin' ? (await supabase.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(100)).data || [] : []);
+    if (p.data?.role === 'admin') {
+      const { data: allCargo } = await supabase.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(100);
+      setCargoRequests(allCargo || []);
+    } else setCargoRequests(cr.data || []);
     if (s.data?.length) {
       const { data: sp } = await supabase.from('store_products')
         .select('id,store_id,title,description,source_url,source_platform,cost_price_xof,selling_price_xof,status,created_at')
