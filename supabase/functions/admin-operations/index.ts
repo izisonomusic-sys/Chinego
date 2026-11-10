@@ -115,10 +115,64 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       if (!['quote_requested', 'pending', 'awaiting_payment', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(body.status)) {
         return json({ error: 'Statut de commande invalide.' }, 400);
       }
-      const { error } = await admin.from('orders')
-        .update({ status: body.status, updated_at: new Date().toISOString() })
-        .eq('id', body.order_id);
+      const { data: order, error: orderReadError } = await admin.from('orders')
+        .select('id,customer_id,order_number').eq('id', body.order_id).single();
+      if (orderReadError || !order) return json({ error: 'Commande introuvable.' }, 404);
+      const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString() };
+      for (const field of ['subtotal_xof', 'shipping_xof', 'total_xof']) {
+        if (body[field] !== undefined && body[field] !== null && body[field] !== '') {
+          const amount = Number(body[field]);
+          if (!Number.isFinite(amount) || amount < 0) return json({ error: 'Montant de commande invalide.' }, 400);
+          updates[field] = amount;
+        }
+      }
+      const { error } = await admin.from('orders').update(updates).eq('id', body.order_id);
       if (error) return json({ error: error.message }, 400);
+      await admin.from('notifications').insert({
+        user_id: order.customer_id,
+        title: 'Mise à jour de votre commande ' + order.order_number,
+        body: body.status === 'awaiting_payment'
+          ? 'Votre devis est prêt. Consultez votre espace ChinaGo pour voir le montant confirmé.'
+          : 'Le statut de votre commande a été mis à jour : ' + body.status,
+        kind: 'order',
+      });
+      return json({ ok: true });
+    }
+
+    if (body.action === 'update_import_request') {
+      const allowed = ['submitted', 'needs_details', 'quoted', 'accepted', 'rejected', 'converted'];
+      if (!allowed.includes(body.status)) return json({ error: 'Statut d’importation invalide.' }, 400);
+      const { data: request, error: readError } = await admin.from('import_requests')
+        .select('id,user_id').eq('id', body.request_id).single();
+      if (readError || !request) return json({ error: 'Demande d’importation introuvable.' }, 404);
+      const updates: Record<string, unknown> = {
+        status: body.status,
+        product_title: String(body.product_title || '').trim() || null,
+        product_description: String(body.product_description || '').trim() || null,
+        product_image_url: String(body.product_image_url || '').trim() || null,
+        admin_notes: String(body.admin_notes || '').trim() || null,
+        quoted_at: body.status === 'quoted' ? new Date().toISOString() : null,
+      };
+      const quantity = Number(body.quantity || 1);
+      if (!Number.isInteger(quantity) || quantity < 1) return json({ error: 'Quantité invalide.' }, 400);
+      updates.quantity = quantity;
+      for (const field of ['unit_price_xof', 'shipping_estimate_xof']) {
+        if (body[field] !== undefined && body[field] !== null && body[field] !== '') {
+          const amount = Number(body[field]);
+          if (!Number.isFinite(amount) || amount < 0) return json({ error: 'Montant du devis invalide.' }, 400);
+          updates[field] = amount;
+        } else updates[field] = null;
+      }
+      const { error } = await admin.from('import_requests').update(updates).eq('id', body.request_id);
+      if (error) return json({ error: error.message }, 400);
+      await admin.from('notifications').insert({
+        user_id: request.user_id,
+        title: body.status === 'quoted' ? 'Votre devis d’importation est prêt' : 'Mise à jour de votre importation',
+        body: body.status === 'quoted'
+          ? 'Le devis de votre produit est disponible dans votre espace ChinaGo.'
+          : 'Votre demande d’importation a été mise à jour : ' + body.status,
+        kind: 'import',
+      });
       return json({ ok: true });
     }
 
