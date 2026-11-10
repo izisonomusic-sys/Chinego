@@ -41,6 +41,11 @@ export default function AdminPortal() {
   const [supplierPayment,setSupplierPayment] = useState({supplier_name:'',amount:'',currency:'CNY',order_id:'',import_request_id:'',payment_method:'Virement',payment_reference:'',notes:''});
   const [customerPayment,setCustomerPayment] = useState({user_id:'',order_id:'',amount_xof:'',payment_method:'',provider:'',provider_reference:'',notes:''});
   const [supplierMessage,setSupplierMessage] = useState({order_id:'',import_request_id:'',supplier_name:'',supplier_whatsapp:'',message_body:'',channel:'whatsapp'});
+  const [productUrl,setProductUrl] = useState('');
+  const [productPreview,setProductPreview] = useState(null);
+  const [productPriceXof,setProductPriceXof] = useState('');
+  const [productCategory,setProductCategory] = useState('');
+  const [productWinner,setProductWinner] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
@@ -132,6 +137,44 @@ export default function AdminPortal() {
     setSupplierMessage({order_id:'',import_request_id:'',supplier_name:'',supplier_whatsapp:'',message_body:'',channel:'whatsapp'});
   }
 
+
+  async function analyzeCatalogProduct(e) {
+    e.preventDefault(); setLoading(true); setError(''); setSuccess('');
+    const {data:result,error:invokeError} = await supabase.functions.invoke('preview-product',{body:{url:productUrl}});
+    if (invokeError || result?.error) setError(invokeError?.message || result.error);
+    else { setProductPreview(result); setSuccess(result.message || 'Analyse terminée. Vérifiez les données avant publication.'); }
+    setLoading(false);
+  }
+
+  async function publishCatalogProduct(e) {
+    e.preventDefault();
+    if (!productPreview?.product_title) { setError('Le lien ne fournit pas de nom de produit. Complétez ou vérifiez les informations avant publication.'); return; }
+    setLoading(true); setError(''); setSuccess('');
+    const title = productPreview.product_title.trim();
+    const slug = title.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') + '-' + crypto.randomUUID().slice(0,8);
+    const {data:created,error:createError} = await supabase.from('products').insert({
+      title,slug,description:productPreview.product_description || null,category_id:productCategory || null,
+      source_url:productPreview.source_url || productUrl,source_platform:productPreview.source_platform || 'other',
+      price_cny:productPreview.original_currency === 'CNY' ? productPreview.original_price_min : null,
+      price_xof:productPriceXof ? Number(productPriceXof) : null,currency:'XOF',
+      is_winner:productWinner,is_featured:productWinner,status:'active',
+      product_variants:productPreview.product_variants || [],product_options:productPreview.product_options || [],
+      minimum_order_quantity:productPreview.minimum_order_quantity || null,
+      original_currency:productPreview.original_currency || null,
+      original_price_min:productPreview.original_price_min ?? null,
+      original_price_max:productPreview.original_price_max ?? null,
+      supplier_company:productPreview.supplier_company || null
+    }).select('id').single();
+    if (createError) { setError(createError.message); setLoading(false); return; }
+    const images = (productPreview.product_images || []).map(v=>typeof v==='string'?v:v?.image_url||v?.url).filter(Boolean);
+    if (images.length) {
+      const {error:imageError} = await supabase.from('product_images').insert(images.map((image_url,index)=>({product_id:created.id,image_url,alt_text:title+' '+(index+1),sort_order:index})));
+      if (imageError) { setError('Produit créé, mais une partie des images n’a pas été enregistrée : '+imageError.message); setLoading(false); await loadData(); return; }
+    }
+    setProductUrl('');setProductPreview(null);setProductPriceXof('');setProductCategory('');setProductWinner(true);
+    setSuccess('Produit publié dans le catalogue ChinaGo.');await loadData();setLoading(false);
+  }
+
   const counts = data?.counts || {};
   const filteredUsers = useMemo(() => (data?.users || []).filter(u => [u.full_name,u.email,u.phone,u.role].join(' ').toLowerCase().includes(search.toLowerCase())),[data,search]);
   const activeConversation = data?.conversations?.find(c => c.id === selectedConversation);
@@ -192,7 +235,12 @@ export default function AdminPortal() {
       {tab==='support'&&<div className="ca-support-layout"><section className="ca-card ca-inbox"><h2>Conversations clients</h2>{(data?.conversations||[]).map(c=><button key={c.id} className={selectedConversation===c.id?'active':''} onClick={()=>setSelectedConversation(c.id)}><b>{c.customer?.full_name||c.customer?.email||'Client'}</b><small>{c.subject} · {c.status}</small></button>)}</section><section className="ca-card ca-chat"><h2>{activeConversation?.customer?.full_name||activeConversation?.customer?.email||'Sélectionnez une conversation'}</h2><div className="ca-chat-history">{activeMessages.map(m=><div className={'ca-bubble '+(m.sender_role==='admin'?'mine':'')} key={m.id}><small>{m.sender_role==='admin'?'ChinaGo':'Client'} · {date(m.created_at)}</small><p>{m.body}</p></div>)}</div>{activeConversation&&<form className="ca-reply" onSubmit={replySupport}><textarea required value={reply} onChange={e=>setReply(e.target.value)} placeholder="Écrire une réponse au client…"/><button className="ca-primary">Envoyer la réponse <MessageCircle size={16}/></button></form>}</section></div>}
       {tab==='suppliers'&&<div className="ca-grid-two"><section className="ca-card"><h2>Fournisseurs enregistrés</h2>{(data?.supplierApplications||[]).map(s=><div className="ca-row" key={s.id}><div><b>{s.company_name}</b><small>{s.contact_name} · {s.email} · {s.phone} · {s.country} · {s.status}</small></div></div>)}</section><section className="ca-card"><h2>Historique des échanges fournisseur</h2>{(data?.supplierMessages||[]).map(m=><div className="ca-row" key={m.id}><div><b>{m.supplier_name||'Fournisseur'} · {m.channel}</b><small>{m.message_body}</small></div></div>)}</section><section className="ca-card"><h2>Préparer un message fournisseur</h2><form className="ca-form" onSubmit={logSupplierMessage}><label>Commande<select value={supplierMessage.order_id} onChange={e=>setSupplierMessage({...supplierMessage,order_id:e.target.value,import_request_id:''})}><option value="">Aucune</option>{(data?.orders||[]).map(o=><option key={o.id} value={o.id}>{o.order_number}</option>)}</select></label><label>Importation<select value={supplierMessage.import_request_id} onChange={e=>setSupplierMessage({...supplierMessage,import_request_id:e.target.value,order_id:''})}><option value="">Aucune</option>{(data?.imports||[]).map(i=><option key={i.id} value={i.id}>{i.product_title||i.source_platform}</option>)}</select></label><label>Nom fournisseur<input value={supplierMessage.supplier_name} onChange={e=>setSupplierMessage({...supplierMessage,supplier_name:e.target.value})}/></label><label>WhatsApp fournisseur<input value={supplierMessage.supplier_whatsapp} onChange={e=>setSupplierMessage({...supplierMessage,supplier_whatsapp:e.target.value})}/></label><label>Message<textarea required value={supplierMessage.message_body} onChange={e=>setSupplierMessage({...supplierMessage,message_body:e.target.value})}/></label><label>Canal<select value={supplierMessage.channel} onChange={e=>setSupplierMessage({...supplierMessage,channel:e.target.value})}><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option><option value="internal">Note interne</option></select></label><button className="ca-primary">Enregistrer l’échange</button>{supplierMessage.supplier_whatsapp&&<a target="_blank" rel="noreferrer" href={'https://wa.me/'+supplierMessage.supplier_whatsapp.replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(supplierMessage.message_body)}>Ouvrir WhatsApp avec ce message ↗</a>}</form></section></div>}
       {tab==='cargo'&&<section className="ca-card"><h2>Suivi des colis et livraisons</h2>{(data?.cargo||[]).map(c=><form className="ca-order" key={c.id} onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action({action:'update_cargo_request',request_id:c.id,status:f.get('status'),cargo_partner_id:f.get('partner')||null,quoted_price_xof:f.get('price')||'',tracking_reference:f.get('tracking')||'',partner_notes:f.get('notes')||''},'Suivi cargo mis à jour.')}}><div><b>{customerName(c.user_id)} · {c.origin_city} → {c.destination_city}</b><small>{c.package_description} · {c.package_count} colis · {c.receiver_name} · {c.receiver_phone}</small></div><label>Statut<select name="status" defaultValue={c.status}>{['submitted','partner_contacted','quoted','accepted','in_transit','arrived','delivered','cancelled'].map(s=><option key={s}>{s}</option>)}</select></label><label>Prix FCFA<input name="price" type="number" min="0" defaultValue={c.quoted_price_xof||''}/></label><label>Suivi<input name="tracking" defaultValue={c.tracking_reference||''}/></label><label>Note<textarea name="notes" defaultValue={c.partner_notes||''}/></label><button className="ca-primary">Enregistrer</button></form>)}</section>}
-      {tab==='products'&&<div className="ca-grid-two"><section className="ca-card"><h2>Produits gagnants</h2><p>Produits validés et mis en avant dans le catalogue.</p>{(data?.products||[]).filter(p=>p.is_winner).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status}</small></div><span className="ca-pill">Gagnant</span></div>)}</section><section className="ca-card"><h2>Produits du catalogue</h2>{(data?.products||[]).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status} · {p.is_winner?'Produit gagnant':'Standard'}</small></div></div>)}</section></div>}
+      {tab==='products'&&<>
+        <section className="ca-card"><h2>Importer un produit par lien</h2><p>Collez un lien fournisseur. ChinaGo essaie de récupérer les informations publiques, les photos et les variantes. Vérifiez les données avant publication.</p><form className="ca-form ca-product-import-form" onSubmit={analyzeCatalogProduct}><label>Lien Alibaba, AliExpress, Amazon ou eBay<input type="url" required value={productUrl} onChange={e=>setProductUrl(e.target.value)} placeholder="https://…"/></label><button className="ca-primary" disabled={loading}>Analyser le produit <Search size={16}/></button></form>
+          {productPreview&&<div className="ca-product-review"><div className="ca-gallery">{(productPreview.product_images||[]).map((src,i)=><img key={i} src={typeof src==='string'?src:src?.image_url||src?.url} alt={productPreview.product_title||'Produit'}/>)}</div><h3>{productPreview.product_title||'Titre non récupéré'}</h3><p>{productPreview.product_description||'Description non disponible automatiquement.'}</p><div className="ca-form-row"><label>Prix de vente ChinaGo (FCFA)<input type="number" min="0" value={productPriceXof} onChange={e=>setProductPriceXof(e.target.value)} placeholder="Prix en FCFA"/></label><label>Catégorie<select value={productCategory} onChange={e=>setProductCategory(e.target.value)}><option value="">Sans catégorie</option>{(data?.categories||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label></div><label className="ca-winner-check"><input type="checkbox" checked={productWinner} onChange={e=>setProductWinner(e.target.checked)}/> Mettre en avant dans « Produits gagnants »</label><small>Source : {productPreview.source_platform} · Extraction : {productPreview.extraction_status} · Prix fournisseur : {productPreview.original_price_min??'—'} {productPreview.original_currency||''} · Photos : {(productPreview.product_images||[]).length}</small><button className="ca-primary" onClick={publishCatalogProduct} disabled={loading||!productPreview.product_title}>Publier dans le catalogue</button></div>}
+        </section>
+        <div className="ca-grid-two"><section className="ca-card"><h2>Produits gagnants</h2><p>Produits vérifiés et mis en avant dans le catalogue.</p>{(data?.products||[]).filter(p=>p.is_winner).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status}</small></div><span className="ca-pill">Gagnant</span></div>)}</section><section className="ca-card"><h2>Produits du catalogue</h2>{(data?.products||[]).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status} · {p.is_winner?'Produit gagnant':'Standard'}</small></div></div>)}</section></div>
+      </>}
     </main>
   </div>;
 }
