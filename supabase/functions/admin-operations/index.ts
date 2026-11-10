@@ -339,6 +339,18 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       return json({ ok: true, supplierAutomation });
     }
 
+    if (body.action === 'retry_supplier_order_messages') {
+      const { data: order, error: orderError } = await admin.from('orders').select('id,order_number,status').eq('id', body.order_id).single();
+      if (orderError || !order) return json({ error: 'Commande introuvable.' }, 404);
+      if (order.status !== 'paid') return json({ error: 'Le message fournisseur ne peut être préparé qu’après confirmation du paiement.' }, 409);
+      try {
+        const supplierAutomation = await prepareSupplierOrderMessages(admin, order.id, order.order_number);
+        return json({ ok: true, supplierAutomation });
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'Impossible de préparer le message fournisseur.' }, 400);
+      }
+    }
+
     if (body.action === 'save_supplier_contact') {
       const companyName = String(body.company_name || '').trim();
       if (!companyName) return json({ error: 'Le nom du fournisseur est obligatoire.' }, 400);
