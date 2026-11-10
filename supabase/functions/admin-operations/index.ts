@@ -67,13 +67,13 @@ async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNu
       ? 'Envoi suspendu : le fournisseur n’a pas encore donné son accord WhatsApp.'
       : (!openAiKey
         ? 'Message standard préparé. Ajoutez OPENAI_API_KEY pour activer la rédaction IA, puis configurez WhatsApp Business.'
-        : 'Brouillon IA prêt. Configurez les identifiants WhatsApp Business et un modèle approuvé par Meta.');
+        : (!aiGenerated ? 'La génération IA n’a pas abouti. Vérifiez OPENAI_API_KEY avant tout envoi.' : 'Brouillon IA prêt. Configurez les identifiants WhatsApp Business et un modèle approuvé par Meta.'));
     let providerMessageId = null;
     const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
     const phoneId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
     const templateName = Deno.env.get('WHATSAPP_TEMPLATE_NAME');
     const templateLanguage = Deno.env.get('WHATSAPP_TEMPLATE_LANGUAGE') || 'en';
-    if (contact.whatsapp_opt_in && contact.whatsapp && token && phoneId && templateName) {
+    if (contact.whatsapp_opt_in && contact.whatsapp && aiGenerated && token && phoneId && templateName) {
       try {
         const version = Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v22.0';
         const sendResponse = await fetch('https://graph.facebook.com/' + version + '/' + phoneId + '/messages', {
