@@ -63,28 +63,27 @@ returns trigger language plpgsql security definer set search_path=''
 as $$
 begin
   if tg_table_name='seller_applications' then
-    update public.profiles
-      set role=case when new.account_type='dropshipper' then 'dropshipper' else 'seller' end,
-          updated_at=now()
+    update public.profiles set role=case when new.account_type='dropshipper' then 'dropshipper' else 'seller' end,updated_at=now()
       where id=new.user_id;
+    update public.seller_applications set status='approved' where id=new.id;
   else
     update public.profiles set role='supplier',updated_at=now() where id=new.user_id;
+    update public.supplier_applications set status='approved' where id=new.id;
     insert into public.supplier_contacts(
       supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by
     ) values (
       new.id,new.company_name,new.contact_name,new.email,new.phone,new.country,new.website_url,new.message,new.user_id
     ) on conflict (supplier_application_id) do nothing;
   end if;
-  new.status := 'approved';
   return new;
 end;
 $$;
 revoke all on function public.activate_business_account_on_application() from public, anon, authenticated;
 drop trigger if exists activate_seller_account_after_application on public.seller_applications;
-create trigger activate_seller_account_after_application before insert on public.seller_applications
+create trigger activate_seller_account_after_application after insert on public.seller_applications
 for each row execute function public.activate_business_account_on_application();
 drop trigger if exists activate_supplier_account_after_application on public.supplier_applications;
-create trigger activate_supplier_account_after_application before insert on public.supplier_applications
+create trigger activate_supplier_account_after_application after insert on public.supplier_applications
 for each row execute function public.activate_business_account_on_application();
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
