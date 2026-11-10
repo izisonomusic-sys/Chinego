@@ -240,11 +240,13 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         admin.from('payment_transactions').select('*').order('created_at', { ascending: false }).limit(300),
         admin.from('support_conversations').select('*').order('updated_at', { ascending: false }).limit(300),
         admin.from('support_messages').select('*').order('created_at', { ascending: true }).limit(1000),
-        admin.from('products').select('id,title,description,price_xof,is_winner,is_featured,status,created_at,product_images(image_url)').order('created_at', { ascending: false }).limit(300),
+        admin.from('products').select('id,title,description,price_xof,is_winner,is_featured,status,created_at,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,product_images(image_url)').order('created_at', { ascending: false }).limit(300),
         admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
       ]);
       const errors = [usersResult,ordersResult,importsResult,cargoResult,sellerResult,supplierResult,storesResult,storeProductsResult,supplierPaymentsResult,supplierMessagesResult,transactionsResult,conversationsResult,supportMessagesResult,productsResult].filter(x => x.error);
       if (errors.length) return json({ error: errors[0].error.message }, 400);
+      const { data: categoriesData, error: categoriesError } = await admin.from('categories').select('id,name,slug').eq('is_active', true).order('sort_order');
+      if (categoriesError) return json({ error: categoriesError.message }, 400);
       const authUsers = authUsersResult.data?.users || [];
       const authById = new Map(authUsers.map(u => [u.id, { email: u.email || '', last_sign_in_at: u.last_sign_in_at || null }]));
       const users = (usersResult.data || []).map(u => ({ ...u, ...(authById.get(u.id) || {}) }));
@@ -256,7 +258,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         storeProducts: storeProductsResult.data || [], supplierPayments: supplierPaymentsResult.data || [],
         supplierMessages: supplierMessagesResult.data || [], transactions: transactionsResult.data || [],
         conversations: (conversationsResult.data || []).map(c => ({ ...c, customer: userMap.get(c.user_id) || null })),
-        supportMessages: supportMessagesResult.data || [], products: productsResult.data || [],
+        supportMessages: supportMessagesResult.data || [], products: productsResult.data || [], categories: categoriesData || [],
         counts: {
           users: users.length, customers: users.filter(u => u.role === 'customer').length,
           sellers: users.filter(u => ['seller','dropshipper'].includes(u.role)).length,
