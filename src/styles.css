@@ -52,3 +52,5 @@
 .cg-admin-order-row select{max-width:190px;border:1px solid #dfe6ed;border-radius:8px;padding:8px;background:#fff;color:var(--navy);font-size:10px}
 .cg-admin-order-row .btn{font-size:10px;padding:8px 10px;margin:2px}
 @media(max-width:680px){.cg-admin-order-row{align-items:flex-start;flex-wrap:wrap}.cg-admin-order-row select{max-width:100%;width:100%}.cg-admin-order-row>span{width:100%}}
+
+.cg-admin-wa{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:10px;justify-self:start;grid-column:1/-1}
