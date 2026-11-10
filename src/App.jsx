@@ -51,7 +51,7 @@ export default function App() {
   const loadPublicProducts = useCallback(async () => {
     if (!supabase) return;
     const { data, error } = await supabase.from('products')
-      .select('id,title,description,price_xof,currency,is_winner,is_featured,product_images(image_url,alt_text)')
+      .select('id,title,description,source_url,price_xof,currency,is_winner,is_featured,product_images(image_url,alt_text)')
       .eq('status', 'active').order('created_at', { ascending: false });
     if (error) { console.error('Catalogue:', error.message); return; }
     setProducts(data || []);
@@ -161,7 +161,7 @@ export default function App() {
   async function saveProfile(event) {
     event.preventDefault(); setBusy(true);
     const { error } = await supabase.from('profiles').update({
-      full_name: profileForm.full_name.trim(), phone: profileForm.phone.trim(), updated_at: new Date().toISOString()
+      full_name: profileForm.full_name.trim(), phone: profileForm.phone.trim()
     }).eq('id', user.id);
     setBusy(false);
     if (error) return setNotice(error.message);
@@ -172,7 +172,7 @@ export default function App() {
     event.preventDefault(); setBusy(true);
     const { error } = await supabase.from('seller_applications').insert({
       user_id: user.id, ...sellerForm, business_name: sellerForm.business_name.trim(),
-      contact_name: sellerForm.contact_name.trim(), email: sellerForm.email.trim(), phone: sellerForm.phone.trim()
+      contact_name: sellerForm.contact_name.trim(), email: (sellerForm.email || user.email || '').trim(), phone: sellerForm.phone.trim()
     });
     setBusy(false);
     if (error) return setNotice(error.message);
@@ -183,7 +183,7 @@ export default function App() {
   async function submitSupplierApplication(event) {
     event.preventDefault(); setBusy(true);
     const { error } = await supabase.from('supplier_applications').insert({
-      user_id: user.id, ...supplierForm,
+      user_id: user.id, ...supplierForm, email: (supplierForm.email || user.email || '').trim(),
       product_categories: supplierForm.product_categories.split(',').map(x => x.trim()).filter(Boolean)
     });
     setBusy(false);
@@ -290,7 +290,7 @@ export default function App() {
 
     {authOpen && <div className="overlay" onClick={() => setAuthOpen(false)}><section className="auth-card" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setAuthOpen(false)}><X/></button><span className="eyebrow">ESPACE CLIENT CHINAGO</span><h2>{authMode === 'signup' ? 'Créer votre compte' : 'Bienvenue de nouveau'}</h2><p>Accédez à vos demandes, vos commandes et votre espace personnel.</p><form onSubmit={authenticate}><label>E-mail<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.com"/></label><label>Mot de passe<input type="password" minLength="8" required value={password} onChange={e => setPassword(e.target.value)} placeholder="8 caractères minimum"/></label><button className="btn btn-primary full" disabled={busy}>{busy ? 'Patientez…' : authMode === 'signup' ? 'Créer mon compte' : 'Me connecter'}</button></form><button className="switch" onClick={() => setAuthMode(authMode === 'signup' ? 'signin' : 'signup')}>{authMode === 'signup' ? 'Déjà inscrit ? Se connecter' : 'Créer un compte'}</button></section></div>}
 
-    {selectedProduct && <div className="overlay" onClick={() => setSelectedProduct(null)}><section className="cg-product-modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setSelectedProduct(null)}><X/></button><div className="cg-modal-image">{selectedProduct.product_images?.[0]?.image_url ? <img src={selectedProduct.product_images[0].image_url} alt={selectedProduct.title}/> : <Package size={55}/>}</div><div><span className="eyebrow">CATALOGUE CHINAGO</span><h2>{selectedProduct.title}</h2><strong>{selectedProduct.price_xof ? money(selectedProduct.price_xof) : 'Prix sur demande'}</strong><p>{selectedProduct.description || 'Contactez ChinaGo pour obtenir les détails et les disponibilités de ce produit.'}</p><button className="btn btn-primary full" onClick={() => {setImportUrl('');setSelectedProduct(null);document.getElementById('import')?.scrollIntoView({behavior:'smooth'});}}>Demander ce produit <ArrowRight size={16}/></button></div></section></div>}
+    {selectedProduct && <div className="overlay" onClick={() => setSelectedProduct(null)}><section className="cg-product-modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setSelectedProduct(null)}><X/></button><div className="cg-modal-image">{selectedProduct.product_images?.[0]?.image_url ? <img src={selectedProduct.product_images[0].image_url} alt={selectedProduct.title}/> : <Package size={55}/>}</div><div><span className="eyebrow">CATALOGUE CHINAGO</span><h2>{selectedProduct.title}</h2><strong>{selectedProduct.price_xof ? money(selectedProduct.price_xof) : 'Prix sur demande'}</strong><p>{selectedProduct.description || 'Contactez ChinaGo pour obtenir les détails et les disponibilités de ce produit.'}</p><button className="btn btn-primary full" onClick={() => {setImportUrl(selectedProduct.source_url || '');setSelectedProduct(null);document.getElementById('import')?.scrollIntoView({behavior:'smooth'});}}>Demander ce produit <ArrowRight size={16}/></button></div></section></div>}
 
     {view === 'home' ? <main>
       <section className="hero" id="home"><div className="wrap hero-grid"><div><span className="eyebrow">ACHETER · IMPORTER · DÉVELOPPER</span><h1>Achetez en Chine depuis le Togo,<br/><em>simplement !</em></h1><p className="lead">Découvrez des produits, partagez un lien et préparez votre importation. ChinaGo coordonne votre parcours entre fournisseur et cargo.</p>
