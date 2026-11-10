@@ -112,7 +112,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
     }
 
     if (body.action === 'update_order_status') {
-      if (!['quote_requested', 'pending', 'awaiting_payment', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(body.status)) {
+      if (!['quote_requested', 'pending', 'awaiting_payment', 'paid', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(body.status)) {
         return json({ error: 'Statut de commande invalide.' }, 400);
       }
       const { data: order, error: orderReadError } = await admin.from('orders')
