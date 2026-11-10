@@ -1,0 +1,198 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import {
+  Activity, BadgeCheck, Bell, Box, CheckCircle2, ClipboardList, CreditCard, Headset,
+  LayoutDashboard, LogOut, MessageCircle, Package, PackageCheck, RefreshCw, Search,
+  ShieldCheck, Store, Truck, Users, Wallet, X
+} from 'lucide-react';
+
+const url = import.meta.env.VITE_SUPABASE_URL;
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabase = url && key ? createClient(url, key) : null;
+const money = value => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(value || 0)) + ' FCFA';
+const date = value => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const imageList = item => {
+  const values = Array.isArray(item?.product_images) ? item.product_images : [];
+  const urls = values.map(v => typeof v === 'string' ? v : v?.image_url || v?.url).filter(Boolean);
+  if (item?.product_image_url && !urls.includes(item.product_image_url)) urls.unshift(item.product_image_url);
+  return urls;
+};
+
+const nav = [
+  ['overview','Vue d’ensemble',LayoutDashboard], ['users','Utilisateurs',Users],
+  ['orders','Commandes',ClipboardList], ['imports','Importations',Package],
+  ['payments','Paiements',CreditCard], ['support','Assistance clients',Headset],
+  ['suppliers','Fournisseurs',Store], ['cargo','Livraisons & cargo',Truck],
+  ['products','Catalogue & gagnants',BadgeCheck]
+];
+
+export default function AdminPortal() {
+  const [session,setSession] = useState(null);
+  const [email,setEmail] = useState('');
+  const [password,setPassword] = useState('');
+  const [data,setData] = useState(null);
+  const [tab,setTab] = useState('overview');
+  const [loading,setLoading] = useState(false);
+  const [error,setError] = useState('');
+  const [success,setSuccess] = useState('');
+  const [search,setSearch] = useState('');
+  const [selectedConversation,setSelectedConversation] = useState('');
+  const [reply,setReply] = useState('');
+  const [supplierPayment,setSupplierPayment] = useState({supplier_name:'',amount:'',currency:'CNY',order_id:'',import_request_id:'',payment_method:'Virement',payment_reference:'',notes:''});
+  const [customerPayment,setCustomerPayment] = useState({user_id:'',order_id:'',amount_xof:'',payment_method:'',provider:'',provider_reference:'',notes:''});
+  const [supplierMessage,setSupplierMessage] = useState({order_id:'',import_request_id:'',supplier_name:'',supplier_whatsapp:'',message_body:'',channel:'whatsapp'});
+
+  const loadData = useCallback(async () => {
+    if (!supabase) return;
+    setLoading(true); setError('');
+    const {data:result,error:invokeError} = await supabase.functions.invoke('admin-operations',{body:{action:'dashboard_data'}});
+    if (invokeError || result?.error) setError(invokeError?.message || result.error);
+    else {
+      setData(result);
+      if (!selectedConversation && result.conversations?.length) setSelectedConversation(result.conversations[0].id);
+    }
+    setLoading(false);
+  },[selectedConversation]);
+
+  const verifySession = useCallback(async current => {
+    if (!current || !supabase) { setSession(null); setData(null); return; }
+    const {data:profile,error:profileError} = await supabase.from('profiles').select('role,full_name').eq('id',current.user.id).maybeSingle();
+    if (profileError || profile?.role !== 'admin') {
+      await supabase.auth.signOut();
+      setSession(null); setData(null);
+      setError('Ce compte ne possède pas les droits administrateur.');
+      return;
+    }
+    setSession(current);
+    await loadData();
+  },[loadData]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({data:result}) => verifySession(result.session));
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event,next) => {
+      if (!next) { setSession(null); setData(null); }
+      else setSession(next);
+    });
+    return () => subscription.unsubscribe();
+  },[verifySession]);
+
+  async function signIn(e) {
+    e.preventDefault(); setLoading(true); setError(''); setSuccess('');
+    if (!supabase) { setError('Connexion Supabase indisponible.'); setLoading(false); return; }
+    const {data:result,error:authError} = await supabase.auth.signInWithPassword({email,password});
+    if (authError) { setError(authError.message); setLoading(false); return; }
+    setPassword('');
+    await verifySession(result.session);
+    setLoading(false);
+  }
+
+  async function signOut() {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null); setData(null); setSuccess('');
+  }
+
+  async function action(body, message) {
+    setLoading(true); setError(''); setSuccess('');
+    const {data:result,error:invokeError} = await supabase.functions.invoke('admin-operations',{body});
+    if (invokeError || result?.error) setError(invokeError?.message || result.error);
+    else { setSuccess(message); await loadData(); }
+    setLoading(false);
+  }
+
+  async function saveSupplierPayment(e) {
+    e.preventDefault();
+    await action({action:'save_supplier_payment',...supplierPayment,amount:Number(supplierPayment.amount)},'Paiement fournisseur enregistré.');
+    setSupplierPayment({supplier_name:'',amount:'',currency:'CNY',order_id:'',import_request_id:'',payment_method:'Virement',payment_reference:'',notes:''});
+  }
+
+  async function addCustomerPayment(e) {
+    e.preventDefault();
+    if (!customerPayment.user_id || Number(customerPayment.amount_xof)<0) { setError('Sélectionnez un client et un montant valide.'); return; }
+    setLoading(true); setError(''); setSuccess('');
+    const {error:insertError} = await supabase.from('payment_transactions').insert({
+      ...customerPayment, amount_xof:Number(customerPayment.amount_xof), order_id:customerPayment.order_id || null,
+      status:'pending', created_by:session.user.id
+    });
+    if (insertError) setError(insertError.message);
+    else { setSuccess('Paiement client ajouté au registre.'); setCustomerPayment({user_id:'',order_id:'',amount_xof:'',payment_method:'',provider:'',provider_reference:'',notes:''}); await loadData(); }
+    setLoading(false);
+  }
+
+  async function replySupport(e) {
+    e.preventDefault();
+    if (!selectedConversation || !reply.trim()) return;
+    await action({action:'reply_support_message',conversation_id:selectedConversation,message:reply.trim()},'Réponse envoyée au client.');
+    setReply('');
+  }
+
+  async function logSupplierMessage(e) {
+    e.preventDefault();
+    await action({action:'log_supplier_message',...supplierMessage},'Message fournisseur enregistré dans l’historique.');
+    setSupplierMessage({order_id:'',import_request_id:'',supplier_name:'',supplier_whatsapp:'',message_body:'',channel:'whatsapp'});
+  }
+
+  const counts = data?.counts || {};
+  const filteredUsers = useMemo(() => (data?.users || []).filter(u => [u.full_name,u.email,u.phone,u.role].join(' ').toLowerCase().includes(search.toLowerCase())),[data,search]);
+  const activeConversation = data?.conversations?.find(c => c.id === selectedConversation);
+  const activeMessages = (data?.supportMessages || []).filter(m => m.conversation_id === selectedConversation);
+  const customerName = id => { const u=data?.users?.find(x=>x.id===id); return u?.full_name || u?.email || id?.slice(0,8) || 'Client'; };
+
+  if (!session) return <div className="ca-login-shell">
+    <section className="ca-login-card">
+      <div className="ca-brand-mark">CG</div>
+      <span className="ca-eyebrow">ZONE PRIVÉE · CHINAGO</span>
+      <h1>Administration</h1>
+      <p>Connectez-vous avec votre compte administrateur. Cet espace est séparé du site client.</p>
+      {error && <div className="ca-alert ca-alert-error">{error}</div>}
+      <form onSubmit={signIn}>
+        <label>Adresse e-mail<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="admin@chinago.tg"/></label>
+        <label>Mot de passe<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Votre mot de passe"/></label>
+        <button className="ca-primary" disabled={loading}>{loading?'Vérification…':'Ouvrir le tableau de bord'}</button>
+      </form>
+      <small>Accès réservé aux comptes dont le rôle administrateur est confirmé dans ChinaGo.</small>
+    </section>
+  </div>;
+
+  return <div className="ca-shell">
+    <aside className="ca-sidebar">
+      <div className="ca-logo"><span>CG</span><div><b>ChinaGo</b><small>ADMINISTRATION</small></div></div>
+      <div className="ca-admin-profile"><span><ShieldCheck/></span><div><b>Administrateur</b><small>{session.user.email}</small></div></div>
+      <nav>{nav.map(([id,label,Icon])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={18}/>{label}{id==='support'&&counts.openSupport>0&&<i>{counts.openSupport}</i>}</button>)}</nav>
+      <button className="ca-logout" onClick={signOut}><LogOut size={17}/> Déconnexion</button>
+    </aside>
+    <main className="ca-main">
+      <header className="ca-topbar"><div><span className="ca-eyebrow">CENTRE DE CONTRÔLE</span><h1>{nav.find(n=>n[0]===tab)?.[1] || 'Administration'}</h1></div><div><button className="ca-refresh" onClick={loadData} disabled={loading}><RefreshCw size={16}/> Actualiser</button><span className="ca-secure"><ShieldCheck size={15}/> Session sécurisée</span></div></header>
+      {error&&<div className="ca-alert ca-alert-error">{error}<button onClick={()=>setError('')}><X size={15}/></button></div>}
+      {success&&<div className="ca-alert ca-alert-success">{success}<button onClick={()=>setSuccess('')}><X size={15}/></button></div>}
+      {loading&&!data&&<div className="ca-loading">Chargement des données ChinaGo…</div>}
+      {tab==='overview'&&<>
+        <div className="ca-welcome"><div><h2>Bienvenue dans votre centre de contrôle.</h2><p>Suivez l’activité de ChinaGo depuis un espace réservé à l’administration.</p></div><span><Activity size={27}/></span></div>
+        <div className="ca-stats">
+          <article><Users/><small>Utilisateurs inscrits</small><b>{counts.users||0}</b></article>
+          <article><ClipboardList/><small>Total des commandes</small><b>{counts.orders||0}</b></article>
+          <article><PackageCheck/><small>Commandes en cours</small><b>{counts.pendingOrders||0}</b></article>
+          <article><Truck/><small>Commandes livrées</small><b>{counts.deliveredOrders||0}</b></article>
+          <article><Wallet/><small>Paiements confirmés suivis</small><b>{money(counts.revenueTrackedXof)}</b></article>
+          <article><Headset/><small>Conversations ouvertes</small><b>{counts.openSupport||0}</b></article>
+          <article><CreditCard/><small>Paiements fournisseurs dus</small><b>{counts.pendingSupplierPayments||0}</b></article>
+          <article><Store/><small>Fournisseurs inscrits</small><b>{data?.supplierApplications?.length||0}</b></article>
+        </div>
+        <div className="ca-grid-two"><section className="ca-card"><h2>Commandes récentes</h2>{(data?.orders||[]).slice(0,6).map(o=><div className="ca-row" key={o.id}><div><b>{o.order_number}</b><small>{o.contact_name||customerName(o.customer_id)} · {o.status}</small></div><strong>{money(o.total_xof)}</strong></div>)}</section><section className="ca-card"><h2>Dernières demandes d’importation</h2>{(data?.imports||[]).slice(0,6).map(i=><div className="ca-row" key={i.id}><div><b>{i.product_title||i.source_platform}</b><small>{customerName(i.user_id)} · {i.status}</small></div><a href={i.source_url} target="_blank" rel="noreferrer">Ouvrir ↗</a></div>)}</section></div>
+      </>}
+      {tab==='users'&&<section className="ca-card"><div className="ca-card-head"><div><h2>Comptes inscrits</h2><p>{filteredUsers.length} résultat(s) · {counts.users||0} comptes connus</p></div><label className="ca-search"><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Nom, e-mail, téléphone…"/></label></div><div className="ca-table-wrap"><table><thead><tr><th>Utilisateur</th><th>Téléphone</th><th>Rôle</th><th>Inscription</th><th>Dernière connexion</th></tr></thead><tbody>{filteredUsers.map(u=><tr key={u.id}><td><b>{u.full_name||'Sans nom'}</b><small>{u.email||u.id}</small></td><td>{u.phone||'—'}</td><td><span className="ca-pill">{u.role}</span></td><td>{date(u.created_at)}</td><td>{date(u.last_sign_in_at)}</td></tr>)}</tbody></table></div></section>}
+      {tab==='orders'&&<section className="ca-card"><h2>Gestion des commandes</h2><p>Changez le statut et enregistrez les montants validés avant de demander le paiement au client.</p>{(data?.orders||[]).map(o=><form className="ca-order" key={o.id} onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action({action:'update_order_status',order_id:o.id,status:f.get('status'),subtotal_xof:Number(f.get('subtotal')),shipping_xof:Number(f.get('shipping')),total_xof:Number(f.get('subtotal'))+Number(f.get('shipping'))},'Commande mise à jour et client notifié.')}}><div><b>{o.order_number} · {customerName(o.customer_id)}</b><small>{o.order_items?.map(x=>x.product_title+' × '+x.quantity).join(', ')||'Commande sans détail'} · {o.tracking_code||'Suivi à générer'}</small><small>{o.delivery_city||''} {o.delivery_address||''}</small></div><label>Statut<select name="status" defaultValue={o.status}>{['quote_requested','pending','awaiting_payment','paid','processing','shipped','delivered','cancelled','refunded'].map(s=><option key={s} value={s}>{s}</option>)}</select></label><label>Produits FCFA<input name="subtotal" type="number" min="0" defaultValue={o.subtotal_xof||0}/></label><label>Transport FCFA<input name="shipping" type="number" min="0" defaultValue={o.shipping_xof||0}/></label><strong>{money(o.total_xof)}</strong><button className="ca-primary">Enregistrer</button></form>)}</section>}
+      {tab==='imports'&&<section className="ca-card"><h2>Importations et aperçu produit</h2><p>Les données ci-dessous sont celles enregistrées ou vérifiées par l’équipe ChinaGo.</p>{(data?.imports||[]).map(i=><article className="ca-import" key={i.id}><div className="ca-import-head"><div><b>{i.product_title||'Produit à identifier'}</b><small>{customerName(i.user_id)} · {i.source_platform} · {i.status}</small><a href={i.source_url} target="_blank" rel="noreferrer">{i.source_url}</a></div><span className="ca-pill">{i.extraction_status||'À vérifier'}</span></div>{imageList(i).length>0&&<div className="ca-gallery">{imageList(i).slice(0,6).map((src,n)=><img key={n} src={src} alt={i.product_title||'Produit importé'}/>)}</div>}<div className="ca-import-meta"><span>Prix source : {i.original_price_min??'—'} {i.original_currency||''}</span><span>MOQ : {i.minimum_order_quantity||'—'}</span><span>Prix client : {money(i.unit_price_xof)}</span><span>Fournisseur : {i.supplier_company||'Non renseigné'}</span></div>{i.product_description&&<p>{i.product_description}</p>}<details><summary>Variantes et options</summary><pre>{JSON.stringify({variants:i.product_variants||[],options:i.product_options||[]},null,2)}</pre></details></article>)}</section>}
+      {tab==='payments'&&<div className="ca-grid-two">
+        <section className="ca-card"><h2>Enregistrer un paiement fournisseur</h2><p>Registre de suivi. L’envoi réel de l’argent doit être effectué via votre banque ou prestataire.</p><form className="ca-form" onSubmit={saveSupplierPayment}><label>Fournisseur<input required value={supplierPayment.supplier_name} onChange={e=>setSupplierPayment({...supplierPayment,supplier_name:e.target.value})}/></label><div className="ca-form-row"><label>Montant<input required type="number" min="0" step="0.01" value={supplierPayment.amount} onChange={e=>setSupplierPayment({...supplierPayment,amount:e.target.value})}/></label><label>Devise<input value={supplierPayment.currency} onChange={e=>setSupplierPayment({...supplierPayment,currency:e.target.value.toUpperCase()})}/></label></div><label>Commande liée<select value={supplierPayment.order_id} onChange={e=>setSupplierPayment({...supplierPayment,order_id:e.target.value})}><option value="">Aucune</option>{(data?.orders||[]).map(o=><option key={o.id} value={o.id}>{o.order_number}</option>)}</select></label><label>Référence de paiement<input value={supplierPayment.payment_reference} onChange={e=>setSupplierPayment({...supplierPayment,payment_reference:e.target.value})}/></label><label>Notes<textarea value={supplierPayment.notes} onChange={e=>setSupplierPayment({...supplierPayment,notes:e.target.value})}/></label><button className="ca-primary">Ajouter le paiement</button></form></section>
+        <section className="ca-card"><h2>Registre des paiements clients</h2><p>Ajoutez une trace lorsqu’un paiement est reçu hors plateforme. Ce registre ne déclenche aucun prélèvement.</p><form className="ca-form" onSubmit={addCustomerPayment}><label>Client<select required value={customerPayment.user_id} onChange={e=>setCustomerPayment({...customerPayment,user_id:e.target.value})}><option value="">Sélectionner un client</option>{(data?.users||[]).map(u=><option key={u.id} value={u.id}>{u.full_name||u.email||u.id}</option>)}</select></label><label>Commande liée<select value={customerPayment.order_id} onChange={e=>setCustomerPayment({...customerPayment,order_id:e.target.value})}><option value="">Aucune</option>{(data?.orders||[]).map(o=><option key={o.id} value={o.id}>{o.order_number}</option>)}</select></label><label>Montant reçu (FCFA)<input required type="number" min="0" value={customerPayment.amount_xof} onChange={e=>setCustomerPayment({...customerPayment,amount_xof:e.target.value})}/></label><label>Moyen de paiement<input value={customerPayment.payment_method} onChange={e=>setCustomerPayment({...customerPayment,payment_method:e.target.value})} placeholder="TMoney, Flooz, virement…"/></label><label>Référence<input value={customerPayment.provider_reference} onChange={e=>setCustomerPayment({...customerPayment,provider_reference:e.target.value})}/></label><button className="ca-primary">Enregistrer le paiement reçu</button></form></section>
+        <section className="ca-card"><h2>Paiements fournisseurs</h2>{(data?.supplierPayments||[]).map(p=><div className="ca-row" key={p.id}><div><b>{p.supplier_name}</b><small>{p.currency} {p.amount} · {p.payment_reference||'Sans référence'} · {p.status}</small></div><select value={p.status} onChange={e=>action({action:'update_supplier_payment',payment_id:p.id,status:e.target.value},'Statut du paiement fournisseur modifié.')}><option value="due">À payer</option><option value="paid">Payé</option><option value="cancelled">Annulé</option></select></div>)}</section>
+        <section className="ca-card"><h2>Paiements clients suivis</h2>{(data?.transactions||[]).map(p=><div className="ca-row" key={p.id}><div><b>{customerName(p.user_id)}</b><small>{money(p.amount_xof)} · {p.payment_method||'Moyen non précisé'} · {p.status}</small></div><select value={p.status} onChange={async e=>{const {error:err}=await supabase.from('payment_transactions').update({status:e.target.value,paid_at:e.target.value==='confirmed'?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq('id',p.id);if(err)setError(err.message);else{setSuccess('Statut du paiement mis à jour.');loadData();}}}><option value="pending">En attente</option><option value="confirmed">Confirmé</option><option value="failed">Échoué</option><option value="refunded">Remboursé</option></select></div>)}</section>
+      </div>}
+      {tab==='support'&&<div className="ca-support-layout"><section className="ca-card ca-inbox"><h2>Conversations clients</h2>{(data?.conversations||[]).map(c=><button key={c.id} className={selectedConversation===c.id?'active':''} onClick={()=>setSelectedConversation(c.id)}><b>{c.customer?.full_name||c.customer?.email||'Client'}</b><small>{c.subject} · {c.status}</small></button>)}</section><section className="ca-card ca-chat"><h2>{activeConversation?.customer?.full_name||activeConversation?.customer?.email||'Sélectionnez une conversation'}</h2><div className="ca-chat-history">{activeMessages.map(m=><div className={'ca-bubble '+(m.sender_role==='admin'?'mine':'')} key={m.id}><small>{m.sender_role==='admin'?'ChinaGo':'Client'} · {date(m.created_at)}</small><p>{m.body}</p></div>)}</div>{activeConversation&&<form className="ca-reply" onSubmit={replySupport}><textarea required value={reply} onChange={e=>setReply(e.target.value)} placeholder="Écrire une réponse au client…"/><button className="ca-primary">Envoyer la réponse <MessageCircle size={16}/></button></form>}</section></div>}
+      {tab==='suppliers'&&<div className="ca-grid-two"><section className="ca-card"><h2>Fournisseurs enregistrés</h2>{(data?.supplierApplications||[]).map(s=><div className="ca-row" key={s.id}><div><b>{s.company_name}</b><small>{s.contact_name} · {s.email} · {s.phone} · {s.country} · {s.status}</small></div></div>)}</section><section className="ca-card"><h2>Historique des échanges fournisseur</h2>{(data?.supplierMessages||[]).map(m=><div className="ca-row" key={m.id}><div><b>{m.supplier_name||'Fournisseur'} · {m.channel}</b><small>{m.message_body}</small></div></div>)}</section><section className="ca-card"><h2>Préparer un message fournisseur</h2><form className="ca-form" onSubmit={logSupplierMessage}><label>Commande<select value={supplierMessage.order_id} onChange={e=>setSupplierMessage({...supplierMessage,order_id:e.target.value,import_request_id:''})}><option value="">Aucune</option>{(data?.orders||[]).map(o=><option key={o.id} value={o.id}>{o.order_number}</option>)}</select></label><label>Importation<select value={supplierMessage.import_request_id} onChange={e=>setSupplierMessage({...supplierMessage,import_request_id:e.target.value,order_id:''})}><option value="">Aucune</option>{(data?.imports||[]).map(i=><option key={i.id} value={i.id}>{i.product_title||i.source_platform}</option>)}</select></label><label>Nom fournisseur<input value={supplierMessage.supplier_name} onChange={e=>setSupplierMessage({...supplierMessage,supplier_name:e.target.value})}/></label><label>WhatsApp fournisseur<input value={supplierMessage.supplier_whatsapp} onChange={e=>setSupplierMessage({...supplierMessage,supplier_whatsapp:e.target.value})}/></label><label>Message<textarea required value={supplierMessage.message_body} onChange={e=>setSupplierMessage({...supplierMessage,message_body:e.target.value})}/></label><label>Canal<select value={supplierMessage.channel} onChange={e=>setSupplierMessage({...supplierMessage,channel:e.target.value})}><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option><option value="internal">Note interne</option></select></label><button className="ca-primary">Enregistrer l’échange</button>{supplierMessage.supplier_whatsapp&&<a target="_blank" rel="noreferrer" href={'https://wa.me/'+supplierMessage.supplier_whatsapp.replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(supplierMessage.message_body)}>Ouvrir WhatsApp avec ce message ↗</a>}</form></section></div>}
+      {tab==='cargo'&&<section className="ca-card"><h2>Suivi des colis et livraisons</h2>{(data?.cargo||[]).map(c=><form className="ca-order" key={c.id} onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action({action:'update_cargo_request',request_id:c.id,status:f.get('status'),cargo_partner_id:f.get('partner')||null,quoted_price_xof:f.get('price')||'',tracking_reference:f.get('tracking')||'',partner_notes:f.get('notes')||''},'Suivi cargo mis à jour.')}}><div><b>{customerName(c.user_id)} · {c.origin_city} → {c.destination_city}</b><small>{c.package_description} · {c.package_count} colis · {c.receiver_name} · {c.receiver_phone}</small></div><label>Statut<select name="status" defaultValue={c.status}>{['submitted','partner_contacted','quoted','accepted','in_transit','arrived','delivered','cancelled'].map(s=><option key={s}>{s}</option>)}</select></label><label>Prix FCFA<input name="price" type="number" min="0" defaultValue={c.quoted_price_xof||''}/></label><label>Suivi<input name="tracking" defaultValue={c.tracking_reference||''}/></label><label>Note<textarea name="notes" defaultValue={c.partner_notes||''}/></label><button className="ca-primary">Enregistrer</button></form>)}</section>}
+      {tab==='products'&&<div className="ca-grid-two"><section className="ca-card"><h2>Produits gagnants</h2><p>Produits validés et mis en avant dans le catalogue.</p>{(data?.products||[]).filter(p=>p.is_winner).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status}</small></div><span className="ca-pill">Gagnant</span></div>)}</section><section className="ca-card"><h2>Produits du catalogue</h2>{(data?.products||[]).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status} · {p.is_winner?'Produit gagnant':'Standard'}</small></div></div>)}</section></div>}
+    </main>
+  </div>;
+}
