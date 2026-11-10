@@ -57,6 +57,7 @@ grant select,insert,update,delete on public.supplier_contacts,public.supplier_or
 
 drop policy if exists "Store owners can create their own stores" on public.stores;
 drop policy if exists "Approved sellers can create their own stores" on public.stores;
+drop policy if exists "Authenticated users can create their own active stores" on public.stores;
 create policy "Authenticated users can create their own active stores" on public.stores
 for insert to authenticated with check (owner_id=(select auth.uid()) and status='active');
 create or replace function public.activate_business_account_on_application()
