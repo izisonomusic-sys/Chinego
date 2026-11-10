@@ -4,7 +4,7 @@ import App from './App.jsx';
 import AdminPortal from './AdminPortal.jsx';
 import './styles.css';
 
-const isAdminPath = window.location.pathname.replace(/\\/+$/, '') === '/admin';
+const isAdminPath = window.location.pathname.endsWith('/admin');
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>{isAdminPath ? <AdminPortal /> : <App />}</React.StrictMode>
 );
