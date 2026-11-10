@@ -4,7 +4,7 @@ import {
   ArrowLeft, ArrowRight, Bell, Box, Check, CheckCircle2, ChevronRight, CircleUserRound,
   ClipboardList, ExternalLink, Heart, LayoutDashboard, Link2, LogOut, Menu, Package,
   PackageCheck, Plus, Search, Settings, ShieldCheck, ShoppingBag, Store, Truck, User,
-  Users, Wallet, X, TrendingUp, Globe2, Clock3, AlertCircle
+  Users, Wallet, X, TrendingUp, Globe2, Clock3, AlertCircle, SlidersHorizontal, MapPin, MessageCircle, PackagePlus
 } from 'lucide-react';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -22,6 +22,17 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [priceBand, setPriceBand] = useState('all');
+  const [productMode, setProductMode] = useState('all');
+  const [cargoPartners, setCargoPartners] = useState([]);
+  const [cargoRequests, setCargoRequests] = useState([]);
+  const [cargoWhatsAppUrl, setCargoWhatsAppUrl] = useState('');
+  const [orderDraft, setOrderDraft] = useState(null);
+  const [orderForm, setOrderForm] = useState({ product_title: '', source_url: '', quantity: '1', contact_name: '', contact_phone: '', delivery_city: 'Lomé', delivery_address: '', customer_notes: '', cargo_partner_id: '' });
+  const [cargoForm, setCargoForm] = useState({ cargo_partner_id: '', origin_city: 'Guangzhou', destination_city: 'Lomé', package_description: '', package_count: '1', weight_kg: '', dimensions: '', declared_value_xof: '', sender_name: '', sender_phone: '', receiver_name: '', receiver_phone: '', receiver_address: '', customer_notes: '' });
+  const [cargoPartnerForm, setCargoPartnerForm] = useState({ name: '', service_type: 'air', origin_cities: 'Guangzhou, Yiwu', destination_cities: 'Lomé', whatsapp_phone: '', contact_phone: '', contact_email: '', pricing_notes: '', estimated_days_min: '', estimated_days_max: '', instructions: '' });
   const [favorites, setFavorites] = useState([]);
   const [imports, setImports] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -50,11 +61,19 @@ export default function App() {
 
   const loadPublicProducts = useCallback(async () => {
     if (!supabase) return;
-    const { data, error } = await supabase.from('products')
-      .select('id,title,description,source_url,price_xof,currency,is_winner,is_featured,product_images(image_url,alt_text)')
-      .eq('status', 'active').order('created_at', { ascending: false });
-    if (error) { console.error('Catalogue:', error.message); return; }
-    setProducts(data || []);
+    const [productResult, categoryResult, cargoResult] = await Promise.all([
+      supabase.from('products')
+        .select('id,title,description,source_url,price_xof,currency,is_winner,is_featured,category_id,categories(name),product_images(image_url,alt_text)')
+        .eq('status', 'active').order('created_at', { ascending: false }),
+      supabase.from('categories').select('id,name,slug').eq('is_active', true).order('sort_order'),
+      supabase.from('cargo_partners').select('id,name,service_type,origin_cities,destination_cities,whatsapp_phone,pricing_notes,estimated_days_min,estimated_days_max,instructions').eq('is_active', true).order('name')
+    ]);
+    if (productResult.error) console.error('Catalogue:', productResult.error.message);
+    if (categoryResult.error) console.error('Catégories:', categoryResult.error.message);
+    if (cargoResult.error) console.error('Partenaires cargo:', cargoResult.error.message);
+    setProducts(productResult.data || []);
+    setCategories(categoryResult.data || []);
+    setCargoPartners(cargoResult.data || []);
   }, []);
 
   const loadMemberData = useCallback(async currentUser => {
@@ -64,15 +83,17 @@ export default function App() {
       supabase.from('product_favorites').select('product_id').eq('user_id', currentUser.id),
       supabase.from('import_requests').select('id,source_url,source_platform,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('notifications').select('id,title,body,kind,read_at,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('orders').select('id,order_number,status,total_xof,created_at,store_id').eq('customer_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('orders').select('id,order_number,status,total_xof,created_at,store_id,delivery_city,delivery_address,order_items(product_title,quantity)').eq('customer_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('seller_applications').select('id,account_type,business_name,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
       supabase.from('supplier_applications').select('id,company_name,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
-      supabase.from('stores').select('id,name,slug,description,platform,shopify_domain,status,created_at').eq('owner_id', currentUser.id).order('created_at', { ascending: false })
+      supabase.from('stores').select('id,name,slug,description,platform,shopify_domain,status,created_at').eq('owner_id', currentUser.id).order('created_at', { ascending: false }),
+      supabase.from('cargo_requests').select('id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50)
     ]);
     if (p.data) { setProfile(p.data); setProfileForm({ full_name: p.data.full_name || '', phone: p.data.phone || '' }); }
     setFavorites((f.data || []).map(x => x.product_id));
     setImports(i.data || []); setNotifications(n.data || []); setOrders(o.data || []);
     setApplications(a.data || []); setSupplierApplications(sa.data || []); setStores(s.data || []);
+    setCargoRequests(s.data?.length || p.data?.role === 'admin' ? (await supabase.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(100)).data || [] : []);
     if (s.data?.length) {
       const { data: sp } = await supabase.from('store_products')
         .select('id,store_id,title,description,source_url,source_platform,cost_price_xof,selling_price_xof,status,created_at')
@@ -102,12 +123,23 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, [loadMemberData, loadPublicProducts]);
 
-  const visibleProducts = useMemo(() => products.filter(p =>
-    (p.title + ' ' + (p.description || '')).toLowerCase().includes(query.toLowerCase())
-  ), [products, query]);
+  const visibleProducts = useMemo(() => products.filter(p => {
+    const matchesText = (p.title + ' ' + (p.description || '')).toLowerCase().includes(query.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory;
+    const price = Number(p.price_xof || 0);
+    const matchesPrice = priceBand === 'all' || (price > 0 && (
+      priceBand === 'under10' ? price < 10000 :
+      priceBand === '10to25' ? price >= 10000 && price < 25000 :
+      priceBand === '25to50' ? price >= 25000 && price < 50000 :
+      priceBand === '50to100' ? price >= 50000 && price < 100000 : price >= 100000
+    ));
+    const matchesMode = productMode === 'all' || p.is_winner;
+    return matchesText && matchesCategory && matchesPrice && matchesMode;
+  }), [products, query, selectedCategory, priceBand, productMode]);
   const unreadCount = notifications.filter(n => !n.read_at).length;
   const pendingApplication = applications.find(a => a.status === 'pending');
   const activeStore = stores.find(s => s.status === 'active') || stores[0];
+  const isAdmin = profile?.role === 'admin';
 
   async function authenticate(event) {
     event.preventDefault();
@@ -230,6 +262,110 @@ export default function App() {
     await loadMemberData(user);
   }
 
+  async function submitOrderRequest(event) {
+    event.preventDefault();
+    if (!user || !supabase) return setNotice('Connectez-vous pour passer une commande.');
+    if (!orderForm.product_title.trim()) return setNotice('Indiquez le nom du produit.');
+    setBusy(true);
+    const selectedPartner = cargoPartners.find(p => p.id === orderForm.cargo_partner_id);
+    const { data, error } = await supabase.rpc('request_order', {
+      p_product_id: orderDraft?.id || null,
+      p_store_product_id: null,
+      p_product_title: orderForm.product_title.trim(),
+      p_source_url: orderForm.source_url.trim(),
+      p_quantity: Number(orderForm.quantity || 1),
+      p_unit_price_xof: Number(orderDraft?.price_xof || 0),
+      p_contact_name: orderForm.contact_name.trim(),
+      p_contact_phone: orderForm.contact_phone.trim(),
+      p_contact_email: user.email || '',
+      p_delivery_address: orderForm.delivery_address.trim(),
+      p_delivery_city: orderForm.delivery_city.trim(),
+      p_customer_notes: orderForm.customer_notes.trim(),
+      p_cargo_partner_id: orderForm.cargo_partner_id || null
+    });
+    setBusy(false);
+    if (error) return setNotice(error.message || 'Impossible d’enregistrer cette commande.');
+    setNotice('Demande de commande enregistrée. Le prix et le transport seront confirmés avant paiement.');
+    setOrderDraft(null);
+    setOrderForm({ product_title: '', source_url: '', quantity: '1', contact_name: profile?.full_name || '', contact_phone: profile?.phone || '', delivery_city: 'Lomé', delivery_address: '', customer_notes: '', cargo_partner_id: '' });
+    await loadMemberData(user);
+    setTab('orders');
+  }
+
+  async function submitCargoRequest(event) {
+    event.preventDefault();
+    if (!user || !supabase) return setNotice('Connectez-vous pour demander un transport.');
+    setBusy(true);
+    const { data, error } = await supabase.from('cargo_requests').insert({
+      user_id: user.id,
+      cargo_partner_id: cargoForm.cargo_partner_id || null,
+      origin_city: cargoForm.origin_city.trim(),
+      destination_city: cargoForm.destination_city.trim(),
+      package_description: cargoForm.package_description.trim(),
+      package_count: Number(cargoForm.package_count || 1),
+      weight_kg: cargoForm.weight_kg ? Number(cargoForm.weight_kg) : null,
+      dimensions: cargoForm.dimensions.trim() || null,
+      declared_value_xof: cargoForm.declared_value_xof ? Number(cargoForm.declared_value_xof) : null,
+      sender_name: cargoForm.sender_name.trim(),
+      sender_phone: cargoForm.sender_phone.trim(),
+      receiver_name: cargoForm.receiver_name.trim(),
+      receiver_phone: cargoForm.receiver_phone.trim(),
+      receiver_address: cargoForm.receiver_address.trim(),
+      customer_notes: cargoForm.customer_notes.trim() || null
+    }).select('id').single();
+    setBusy(false);
+    if (error) return setNotice(error.message || 'Impossible d’enregistrer la demande cargo.');
+    const partner = cargoPartners.find(p => p.id === cargoForm.cargo_partner_id);
+    if (partner?.whatsapp_phone) {
+      const message = [
+        'Bonjour ' + partner.name + ',',
+        'Nouvelle demande de transport ChinaGo #' + data.id.slice(0,8).toUpperCase(),
+        'Trajet : ' + cargoForm.origin_city + ' → ' + cargoForm.destination_city,
+        'Colis : ' + cargoForm.package_description,
+        'Quantité : ' + cargoForm.package_count,
+        'Poids : ' + (cargoForm.weight_kg || 'À préciser') + ' kg',
+        'Expéditeur : ' + cargoForm.sender_name + ' / ' + cargoForm.sender_phone,
+        'Destinataire : ' + cargoForm.receiver_name + ' / ' + cargoForm.receiver_phone,
+        'Adresse : ' + cargoForm.receiver_address,
+        'Notes : ' + (cargoForm.customer_notes || 'Aucune')
+      ].join('\n');
+      setCargoWhatsAppUrl('https://wa.me/' + partner.whatsapp_phone.replace(/[^0-9]/g, '') + '?text=' + encodeURIComponent(message));
+    } else setCargoWhatsAppUrl('');
+    setNotice('Votre demande cargo est enregistrée. Vous pouvez maintenant contacter le transporteur si un numéro WhatsApp est disponible.');
+    setCargoForm({ cargo_partner_id: '', origin_city: 'Guangzhou', destination_city: 'Lomé', package_description: '', package_count: '1', weight_kg: '', dimensions: '', declared_value_xof: '', sender_name: profile?.full_name || '', sender_phone: profile?.phone || '', receiver_name: '', receiver_phone: '', receiver_address: '', customer_notes: '' });
+    await loadMemberData(user);
+  }
+
+  async function submitCargoPartner(event) {
+    event.preventDefault();
+    if (!isAdmin) return;
+    setBusy(true);
+    const { error } = await supabase.from('cargo_partners').insert({
+      name: cargoPartnerForm.name.trim(), service_type: cargoPartnerForm.service_type,
+      origin_countries: ['China'], origin_cities: cargoPartnerForm.origin_cities.split(',').map(x => x.trim()).filter(Boolean),
+      destination_countries: ['Togo'], destination_cities: cargoPartnerForm.destination_cities.split(',').map(x => x.trim()).filter(Boolean),
+      whatsapp_phone: cargoPartnerForm.whatsapp_phone.trim() || null,
+      contact_phone: cargoPartnerForm.contact_phone.trim() || null,
+      contact_email: cargoPartnerForm.contact_email.trim() || null,
+      pricing_notes: cargoPartnerForm.pricing_notes.trim() || null,
+      estimated_days_min: cargoPartnerForm.estimated_days_min ? Number(cargoPartnerForm.estimated_days_min) : null,
+      estimated_days_max: cargoPartnerForm.estimated_days_max ? Number(cargoPartnerForm.estimated_days_max) : null,
+      instructions: cargoPartnerForm.instructions.trim() || null, is_active: true
+    });
+    setBusy(false);
+    if (error) return setNotice(error.message);
+    setCargoPartnerForm({ name: '', service_type: 'air', origin_cities: 'Guangzhou, Yiwu', destination_cities: 'Lomé', whatsapp_phone: '', contact_phone: '', contact_email: '', pricing_notes: '', estimated_days_min: '', estimated_days_max: '', instructions: '' });
+    setNotice('Transporteur ajouté et publié.');
+    await loadPublicProducts();
+  }
+
+  async function updateCargoStatus(id, status) {
+    const { error } = await supabase.from('cargo_requests').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return setNotice(error.message);
+    setNotice('Statut cargo mis à jour.');
+    await loadMemberData(user);
+  }
+
   async function markNotificationRead(id) {
     const { error } = await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id);
     if (error) return setNotice(error.message);
@@ -249,10 +385,12 @@ export default function App() {
     { id: 'favorites', label: 'Mes favoris', icon: Heart },
     { id: 'notifications', label: 'Notifications', icon: Bell, count: unreadCount },
     { id: 'orders', label: 'Mes commandes', icon: ClipboardList },
+    { id: 'cargo', label: 'Transport & cargo', icon: Truck },
     { id: 'dropshipping', label: 'Dropshipping', icon: TrendingUp },
     { id: 'store', label: 'Ma boutique', icon: Store },
     { id: 'supplier', label: 'Devenir fournisseur', icon: PackageCheck },
-    { id: 'applications', label: 'Mes candidatures', icon: Users }
+    { id: 'applications', label: 'Mes candidatures', icon: Users },
+    ...(isAdmin ? [{ id: 'admin', label: 'Administration', icon: ShieldCheck }] : [])
   ];
 
   const productCard = p => {
@@ -290,7 +428,7 @@ export default function App() {
 
     {authOpen && <div className="overlay" onClick={() => setAuthOpen(false)}><section className="auth-card" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setAuthOpen(false)}><X/></button><span className="eyebrow">ESPACE CLIENT CHINAGO</span><h2>{authMode === 'signup' ? 'Créer votre compte' : 'Bienvenue de nouveau'}</h2><p>Accédez à vos demandes, vos commandes et votre espace personnel.</p><form onSubmit={authenticate}><label>E-mail<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.com"/></label><label>Mot de passe<input type="password" minLength="8" required value={password} onChange={e => setPassword(e.target.value)} placeholder="8 caractères minimum"/></label><button className="btn btn-primary full" disabled={busy}>{busy ? 'Patientez…' : authMode === 'signup' ? 'Créer mon compte' : 'Me connecter'}</button></form><button className="switch" onClick={() => setAuthMode(authMode === 'signup' ? 'signin' : 'signup')}>{authMode === 'signup' ? 'Déjà inscrit ? Se connecter' : 'Créer un compte'}</button></section></div>}
 
-    {selectedProduct && <div className="overlay" onClick={() => setSelectedProduct(null)}><section className="cg-product-modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setSelectedProduct(null)}><X/></button><div className="cg-modal-image">{selectedProduct.product_images?.[0]?.image_url ? <img src={selectedProduct.product_images[0].image_url} alt={selectedProduct.title}/> : <Package size={55}/>}</div><div><span className="eyebrow">CATALOGUE CHINAGO</span><h2>{selectedProduct.title}</h2><strong>{selectedProduct.price_xof ? money(selectedProduct.price_xof) : 'Prix sur demande'}</strong><p>{selectedProduct.description || 'Contactez ChinaGo pour obtenir les détails et les disponibilités de ce produit.'}</p><button className="btn btn-primary full" onClick={() => {setImportUrl(selectedProduct.source_url || '');setSelectedProduct(null);document.getElementById('import')?.scrollIntoView({behavior:'smooth'});}}>Demander ce produit <ArrowRight size={16}/></button></div></section></div>}
+    {selectedProduct && <div className="overlay" onClick={() => setSelectedProduct(null)}><section className="cg-product-modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setSelectedProduct(null)}><X/></button><div className="cg-modal-image">{selectedProduct.product_images?.[0]?.image_url ? <img src={selectedProduct.product_images[0].image_url} alt={selectedProduct.title}/> : <Package size={55}/>}</div><div><span className="eyebrow">CATALOGUE CHINAGO</span><h2>{selectedProduct.title}</h2><strong>{selectedProduct.price_xof ? money(selectedProduct.price_xof) : 'Prix sur demande'}</strong><p>{selectedProduct.description || 'Contactez ChinaGo pour obtenir les détails et les disponibilités de ce produit.'}</p><button className="btn btn-primary full" onClick={() => {if (!user) {setSelectedProduct(null);setAuthMode('signin');setAuthOpen(true);return setNotice('Connectez-vous pour demander ce produit.');}setOrderDraft(selectedProduct);setOrderForm(old => ({...old,product_title:selectedProduct.title,source_url:selectedProduct.source_url || '',quantity:'1'}));setSelectedProduct(null);setView('dashboard');setTab('orders');}}>Passer commande <ArrowRight size={16}/></button></div></section></div>}
 
     {view === 'home' ? <main>
       <section className="hero" id="home"><div className="wrap hero-grid"><div><span className="eyebrow">ACHETER · IMPORTER · DÉVELOPPER</span><h1>Achetez en Chine depuis le Togo,<br/><em>simplement !</em></h1><p className="lead">Découvrez des produits, partagez un lien et préparez votre importation. ChinaGo coordonne votre parcours entre fournisseur et cargo.</p>
@@ -298,7 +436,12 @@ export default function App() {
         <div className="hero-points"><span><CheckCircle2/> Demandes suivies dans votre compte</span><span><ShieldCheck/> Validation avant paiement fournisseur</span></div>
       </div><div className="hero-visual"><div className="halo"></div><div className="hero-box"><div className="box-label">CHINAGO LOGISTICS <b>CG</b></div><div className="box-art">📦</div><strong>Votre commerce,<br/>sans frontières.</strong><small>CHINE → AFRIQUE</small></div><div className="float float-one"><PackageCheck/><span><b>Commande suivie</b><small>À chaque étape</small></span></div><div className="float float-two"><Truck/><span><b>Coordination cargo</b><small>Chine vers le Togo</small></span></div></div></div></section>
       <section className="trust"><div className="wrap trust-grid"><div><ShieldCheck/><b>Parcours encadré</b><small>Validation à chaque étape</small></div><div><ShoppingBag/><b>Prix en FCFA</b><small>Devis clair et local</small></div><div><Store/><b>Espace vendeur</b><small>Votre boutique en ligne</small></div><div><Truck/><b>Suivi cargo</b><small>Du dépôt à la livraison</small></div></div></section>
-      <section className="section" id="products"><div className="wrap"><div className="section-head"><div><span className="eyebrow">INSPIRATION & OPPORTUNITÉS</span><h2>Catalogue <em>ChinaGo</em></h2><p>Les produits publiés et validés par l’équipe ChinaGo.</p></div><div className="search"><Search/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher un produit"/></div></div>
+      <section className="section" id="products"><div className="wrap"><div className="section-head"><div><span className="eyebrow">INSPIRATION & OPPORTUNITÉS</span><h2>Catalogue <em>ChinaGo</em></h2><p>Explorez par catégorie, budget ou tendance. Les produits affichés sont ceux réellement publiés dans le catalogue.</p></div><div className="search"><Search/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher un produit"/></div></div>
+        <div className="cg-discovery-tools">
+          <div className="cg-mode-switch"><button className={productMode === 'all' ? 'active' : ''} onClick={() => setProductMode('all')}>Tous les produits</button><button className={productMode === 'winners' ? 'active' : ''} onClick={() => setProductMode('winners')}>Produits tendances</button></div>
+          <div className="cg-filter-row"><label><SlidersHorizontal size={16}/> Catégorie<select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}><option value="all">Toutes les catégories</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Budget<select value={priceBand} onChange={e => setPriceBand(e.target.value)}><option value="all">Tous les prix</option><option value="under10">Moins de 10 000 FCFA</option><option value="10to25">10 000 à 25 000 FCFA</option><option value="25to50">25 000 à 50 000 FCFA</option><option value="50to100">50 000 à 100 000 FCFA</option><option value="over100">Plus de 100 000 FCFA</option></select></label><button className="cg-clear-filters" onClick={() => {setQuery('');setSelectedCategory('all');setPriceBand('all');setProductMode('all');}}>Réinitialiser</button></div>
+          <div className="cg-category-chips"><button className={selectedCategory === 'all' ? 'active' : ''} onClick={() => setSelectedCategory('all')}>Tout</button>{categories.map(c => <button key={c.id} className={selectedCategory === c.id ? 'active' : ''} onClick={() => setSelectedCategory(c.id)}>{c.name}</button>)}</div>
+        </div>
         {visibleProducts.length ? <div className="product-grid">{visibleProducts.map(productCard)}</div> : <div className="cg-empty-public"><Package size={34}/><h3>{query ? 'Aucun produit trouvé' : 'Le catalogue se prépare'}</h3><p>{query ? 'Essayez un autre mot-clé.' : 'Les produits réels apparaîtront ici dès leur validation. Vous pouvez déjà envoyer un lien produit pour demander un devis.'}</p></div>}
       </div></section>
       <section className="how section" id="how"><div className="wrap"><div className="section-head centered"><div><span className="eyebrow">UN PARCOURS CLAIR</span><h2>Comment fonctionne <em>ChinaGo ?</em></h2><p>Un processus progressif avec validation des étapes sensibles.</p></div></div><div className="steps"><article><b>01</b><Link2/><h3>Vous choisissez</h3><p>Parcourez le catalogue ou partagez le lien de votre produit.</p></article><article><b>02</b><Box/><h3>Nous préparons le devis</h3><p>Le produit, les options et les frais sont vérifiés avant validation.</p></article><article><b>03</b><Store/><h3>Le fournisseur confirme</h3><p>Disponibilité, prix et délai sont contrôlés avant engagement.</p></article><article><b>04</b><Truck/><h3>Le cargo livre</h3><p>Votre colis est suivi jusqu’à sa réception au Togo.</p></article></div></div></section>
@@ -317,7 +460,7 @@ export default function App() {
 
       {tab === 'notifications' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Centre de notifications</h2><p>Les mises à jour de vos demandes et candidatures.</p></div><span className="cg-status">{unreadCount} non lue(s)</span></div>{notifications.length ? notifications.map(n => <div className={'cg-notification '+(!n.read_at?'unread':'')} key={n.id}><span className="cg-list-icon"><Bell size={18}/></span><div><b>{n.title}</b><p>{n.body}</p><small>{dateLabel(n.created_at)}</small></div>{!n.read_at && <button className="cg-text-button" onClick={() => markNotificationRead(n.id)}><Check size={15}/> Marquer comme lue</button>}</div>) : <p className="cg-muted">Aucune notification pour le moment.</p>}</div>}
 
-      {tab === 'orders' && <div className="cg-panel"><h2>Mes commandes</h2><p>Retrouvez ici vos achats et leur avancement.</p>{orders.length ? orders.map(o => <div className="cg-list-row" key={o.id}><span className="cg-list-icon"><PackageCheck/></span><div><b>{o.order_number}</b><small>Statut : {o.status}</small><small>{money(o.total_xof)}</small></div><time>{dateLabel(o.created_at)}</time></div>) : <div className="cg-empty"><ClipboardList/><b>Aucune commande pour le moment</b><small>Vos commandes apparaîtront ici après leur validation.</small></div>}</div>}
+      {tab === 'orders' && <><div className="cg-panel"><div className="cg-panel-head"><div><h2>Préparer une commande</h2><p>La demande est vérifiée par ChinaGo. Aucun paiement n’est prélevé à cette étape.</p></div></div><form className="cg-form" onSubmit={submitOrderRequest}><label>Produit à commander<input required value={orderForm.product_title} onChange={e => setOrderForm({...orderForm,product_title:e.target.value})} placeholder="Nom du produit"/></label><label>Lien du produit (facultatif)<input value={orderForm.source_url} onChange={e => setOrderForm({...orderForm,source_url:e.target.value})} placeholder="https://..."/></label><div className="cg-two-fields"><label>Quantité<input type="number" min="1" max="1000" required value={orderForm.quantity} onChange={e => setOrderForm({...orderForm,quantity:e.target.value})}/></label><label>Transporteur souhaité<select value={orderForm.cargo_partner_id} onChange={e => setOrderForm({...orderForm,cargo_partner_id:e.target.value})}><option value="">ChinaGo me conseille un cargo</option>{cargoPartners.map(p => <option key={p.id} value={p.id}>{p.name} · {p.service_type === 'air' ? 'Aérien' : p.service_type === 'sea' ? 'Maritime' : p.service_type}</option>)}</select></label></div>{orderDraft?.price_xof ? <p className="cg-price-hint">Prix catalogue indicatif : {money(orderDraft.price_xof)} par unité. Le montant final sera confirmé après vérification.</p> : <p className="cg-price-hint">Le prix sera confirmé après vérification du lien et des options du fournisseur.</p>}<h3 className="cg-subtitle">Coordonnées et livraison</h3><div className="cg-two-fields"><label>Nom du destinataire<input required value={orderForm.contact_name} onChange={e => setOrderForm({...orderForm,contact_name:e.target.value})}/></label><label>Téléphone<input required value={orderForm.contact_phone} onChange={e => setOrderForm({...orderForm,contact_phone:e.target.value})} placeholder="+228 ..."/></label></div><div className="cg-two-fields"><label>Ville de livraison<input required value={orderForm.delivery_city} onChange={e => setOrderForm({...orderForm,delivery_city:e.target.value})}/></label><label>Adresse de livraison<input required value={orderForm.delivery_address} onChange={e => setOrderForm({...orderForm,delivery_address:e.target.value})}/></label></div><label>Précisions<textarea value={orderForm.customer_notes} onChange={e => setOrderForm({...orderForm,customer_notes:e.target.value})} placeholder="Couleur, taille, modèle, lien d’option…"/></label><button className="btn btn-primary" disabled={busy}>Envoyer ma demande de commande <ArrowRight/></button></form></div><div className="cg-panel"><h2>Historique de mes commandes</h2>{orders.length ? orders.map(o => <div className="cg-list-row" key={o.id}><span className="cg-list-icon"><PackageCheck/></span><div><b>{o.order_number}</b><small>Statut : {o.status === 'quote_requested' ? 'Devis demandé' : o.status}</small><small>{money(o.total_xof)} · {o.delivery_city || 'Livraison à confirmer'}</small>{o.order_items?.map((it,idx) => <small key={idx}>{it.product_title} × {it.quantity}</small>)}</div><time>{dateLabel(o.created_at)}</time></div>) : <div className="cg-empty"><ClipboardList/><b>Aucune commande pour le moment</b><small>Vos demandes apparaîtront ici après envoi.</small></div>}</div></>}
 
       {tab === 'dropshipping' && <><div className="cg-panel cg-feature-panel"><span className="cg-feature-icon"><TrendingUp/></span><div><span className="eyebrow">ESPACE DROPSHIPPING</span><h2>Construisez votre activité de vente</h2><p>Importez des produits, fixez votre prix de vente, suivez vos marges et gérez vos commandes depuis ChinaGo.</p></div></div>{pendingApplication ? <div className="cg-status-box"><Clock3/><div><b>Votre candidature est en cours d’examen</b><p>Nous vous informerons lorsque votre espace dropshipping sera activé.</p></div></div> : profile?.role === 'dropshipper' || profile?.role === 'seller' || profile?.role === 'admin' ? <div className="cg-panel"><h2>Votre activité dropshipping</h2><div className="cg-stats"><div><span><Store/></span><small>Boutiques</small><b>{stores.length}</b></div><div><span><Package/></span><small>Produits</small><b>{storeProducts.length}</b></div><div><span><Wallet/></span><small>Ventes</small><b>0</b></div><div><span><ClipboardList/></span><small>Commandes</small><b>0</b></div></div><button className="btn btn-primary" onClick={() => setTab('store')}>Gérer ma boutique <ArrowRight/></button></div> : <div className="cg-panel"><h2>Devenir dropshipper</h2><p>Envoyez votre candidature. Après validation, vous pourrez créer une boutique et y ajouter des produits.</p><form className="cg-form" onSubmit={submitSellerApplication}><input type="hidden" value="dropshipper"/><label>Nom de votre activité<input required value={sellerForm.business_name} onChange={e => setSellerForm({...sellerForm,business_name:e.target.value})} placeholder="Ex. Ma boutique en ligne"/></label><label>Nom du responsable<input required value={sellerForm.contact_name} onChange={e => setSellerForm({...sellerForm,contact_name:e.target.value})} placeholder="Votre nom"/></label><label>E-mail<input type="email" required value={sellerForm.email || user?.email || ''} onChange={e => setSellerForm({...sellerForm,email:e.target.value})}/></label><label>Téléphone<input required value={sellerForm.phone} onChange={e => setSellerForm({...sellerForm,phone:e.target.value})} placeholder="+228 ..."/></label><label>Lien de votre boutique (facultatif)<input value={sellerForm.store_url} onChange={e => setSellerForm({...sellerForm,store_url:e.target.value})} placeholder="https://..."/></label><label>Présentez votre projet<textarea value={sellerForm.message} onChange={e => setSellerForm({...sellerForm,message:e.target.value})} placeholder="Parlez-nous de votre projet"/></label><button className="btn btn-primary" disabled={busy}>Envoyer ma candidature <ArrowRight/></button></form></div>}</>}
 
@@ -326,6 +469,8 @@ export default function App() {
 
       {tab === 'supplier' && <div className="cg-panel"><h2>Devenir fournisseur ChinaGo</h2><p>Vous êtes fabricant, grossiste ou fournisseur ? Présentez votre entreprise à notre équipe.</p><form className="cg-form" onSubmit={submitSupplierApplication}><label>Nom de l’entreprise<input required value={supplierForm.company_name} onChange={e => setSupplierForm({...supplierForm,company_name:e.target.value})}/></label><label>Nom du contact<input required value={supplierForm.contact_name} onChange={e => setSupplierForm({...supplierForm,contact_name:e.target.value})}/></label><label>E-mail<input type="email" required value={supplierForm.email || user?.email || ''} onChange={e => setSupplierForm({...supplierForm,email:e.target.value})}/></label><label>Téléphone<input required value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm,phone:e.target.value})}/></label><label>Pays<input required value={supplierForm.country} onChange={e => setSupplierForm({...supplierForm,country:e.target.value})}/></label><label>Site web (facultatif)<input value={supplierForm.website_url} onChange={e => setSupplierForm({...supplierForm,website_url:e.target.value})}/></label><label>Catégories de produits (séparées par des virgules)<input value={supplierForm.product_categories} onChange={e => setSupplierForm({...supplierForm,product_categories:e.target.value})} placeholder="Électronique, maison, mode..."/></label><label>Présentation<textarea value={supplierForm.message} onChange={e => setSupplierForm({...supplierForm,message:e.target.value})}/></label><button className="btn btn-primary" disabled={busy}>Envoyer ma candidature <ArrowRight/></button></form></div>}
 
+      {tab === 'cargo' && <><div className="cg-panel"><div className="cg-panel-head"><div><h2>Organiser un transport</h2><p>Choisissez un partenaire cargo ou laissez ChinaGo vous en proposer un. Le suivi sera mis à jour manuellement au départ.</p></div></div>{cargoPartners.length ? <div className="cg-carrier-grid">{cargoPartners.map(p => <article className="cg-carrier-card" key={p.id}><span><Truck/></span><div><b>{p.name}</b><small>{p.service_type === 'air' ? 'Transport aérien' : p.service_type === 'sea' ? 'Transport maritime' : p.service_type === 'express' ? 'Express' : p.service_type === 'road' ? 'Routier' : 'Transport mixte'}</small><small>{(p.origin_cities || []).join(', ') || 'Chine'} → {(p.destination_cities || []).join(', ') || 'Togo'}</small>{p.estimated_days_min && <small>Délai indicatif : {p.estimated_days_min}–{p.estimated_days_max || p.estimated_days_min} jours</small>}{p.pricing_notes && <small>{p.pricing_notes}</small>}</div><button className="btn btn-ghost" onClick={() => setCargoForm(old => ({...old,cargo_partner_id:p.id}))}>{cargoForm.cargo_partner_id === p.id ? 'Sélectionné' : 'Choisir'}</button></article>)}</div> : <div className="cg-empty"><Truck/><b>Les transporteurs seront bientôt disponibles</b><small>Vous pouvez tout de même déposer une demande : ChinaGo vous attribuera un partenaire manuellement.</small></div>}<form className="cg-form cg-divider-top" onSubmit={submitCargoRequest}><h3>Informations sur le colis</h3><label>Transporteur<select value={cargoForm.cargo_partner_id} onChange={e => setCargoForm({...cargoForm,cargo_partner_id:e.target.value})}><option value="">Laisser ChinaGo choisir</option>{cargoPartners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="cg-two-fields"><label>Ville de départ<input required value={cargoForm.origin_city} onChange={e => setCargoForm({...cargoForm,origin_city:e.target.value})}/></label><label>Ville d’arrivée<input required value={cargoForm.destination_city} onChange={e => setCargoForm({...cargoForm,destination_city:e.target.value})}/></label></div><label>Description du colis<input required value={cargoForm.package_description} onChange={e => setCargoForm({...cargoForm,package_description:e.target.value})} placeholder="Ex. 2 cartons de vêtements"/></label><div className="cg-three-fields"><label>Nombre de colis<input type="number" min="1" required value={cargoForm.package_count} onChange={e => setCargoForm({...cargoForm,package_count:e.target.value})}/></label><label>Poids (kg)<input type="number" min="0.1" step="0.1" value={cargoForm.weight_kg} onChange={e => setCargoForm({...cargoForm,weight_kg:e.target.value})}/></label><label>Dimensions<input value={cargoForm.dimensions} onChange={e => setCargoForm({...cargoForm,dimensions:e.target.value})} placeholder="L × l × H"/></label></div><label>Valeur déclarée (FCFA)<input type="number" min="0" value={cargoForm.declared_value_xof} onChange={e => setCargoForm({...cargoForm,declared_value_xof:e.target.value})}/></label><h3 className="cg-subtitle">Expéditeur et destinataire</h3><div className="cg-two-fields"><label>Nom de l’expéditeur<input required value={cargoForm.sender_name} onChange={e => setCargoForm({...cargoForm,sender_name:e.target.value})}/></label><label>Téléphone expéditeur<input required value={cargoForm.sender_phone} onChange={e => setCargoForm({...cargoForm,sender_phone:e.target.value})}/></label></div><div className="cg-two-fields"><label>Nom du destinataire<input required value={cargoForm.receiver_name} onChange={e => setCargoForm({...cargoForm,receiver_name:e.target.value})}/></label><label>Téléphone destinataire<input required value={cargoForm.receiver_phone} onChange={e => setCargoForm({...cargoForm,receiver_phone:e.target.value})}/></label></div><label>Adresse de livraison<input required value={cargoForm.receiver_address} onChange={e => setCargoForm({...cargoForm,receiver_address:e.target.value})}/></label><label>Informations complémentaires<textarea value={cargoForm.customer_notes} onChange={e => setCargoForm({...cargoForm,customer_notes:e.target.value})}/></label><button className="btn btn-primary" disabled={busy}>Enregistrer ma demande cargo <Truck/></button></form>{cargoWhatsAppUrl && <a className="btn btn-primary cg-whatsapp-link" href={cargoWhatsAppUrl} target="_blank" rel="noreferrer"><MessageCircle/> Envoyer les détails au transporteur sur WhatsApp</a>}</div><div className="cg-panel"><h2>Suivi de mes demandes cargo</h2>{cargoRequests.filter(x => x.user_id === undefined || x.user_id === user?.id).length ? cargoRequests.filter(x => x.user_id === undefined || x.user_id === user?.id).map(c => <div className="cg-list-row" key={c.id}><span className="cg-list-icon"><Truck/></span><div><b>{c.cargo_partners?.name || 'Transporteur à attribuer'}</b><small>{c.origin_city} → {c.destination_city} · {c.package_description}</small><small>Statut : {c.status === 'submitted' ? 'Demande reçue' : c.status}</small>{c.tracking_reference && <small>Suivi : {c.tracking_reference}</small>}{c.quoted_price_xof && <small>Devis : {money(c.quoted_price_xof)}</small>}</div><time>{dateLabel(c.created_at)}</time></div>) : <p className="cg-muted">Aucune demande cargo pour le moment.</p>}</div></>}
+      {tab === 'admin' && isAdmin && <><div className="cg-panel"><h2>Ajouter un transporteur manuel</h2><p>Renseignez les coordonnées communiquées par le transporteur. Aucun logiciel ni API n’est nécessaire.</p><form className="cg-form" onSubmit={submitCargoPartner}><label>Nom du transporteur<input required value={cargoPartnerForm.name} onChange={e => setCargoPartnerForm({...cargoPartnerForm,name:e.target.value})}/></label><label>Type de transport<select value={cargoPartnerForm.service_type} onChange={e => setCargoPartnerForm({...cargoPartnerForm,service_type:e.target.value})}><option value="air">Aérien</option><option value="sea">Maritime</option><option value="road">Routier</option><option value="express">Express</option><option value="mixed">Mixte</option></select></label><div className="cg-two-fields"><label>Villes de départ<input value={cargoPartnerForm.origin_cities} onChange={e => setCargoPartnerForm({...cargoPartnerForm,origin_cities:e.target.value})}/></label><label>Villes de destination<input value={cargoPartnerForm.destination_cities} onChange={e => setCargoPartnerForm({...cargoPartnerForm,destination_cities:e.target.value})}/></label></div><label>WhatsApp du transporteur<input value={cargoPartnerForm.whatsapp_phone} onChange={e => setCargoPartnerForm({...cargoPartnerForm,whatsapp_phone:e.target.value})} placeholder="+86... ou +228..."/></label><div className="cg-two-fields"><label>Téléphone<input value={cargoPartnerForm.contact_phone} onChange={e => setCargoPartnerForm({...cargoPartnerForm,contact_phone:e.target.value})}/></label><label>E-mail<input type="email" value={cargoPartnerForm.contact_email} onChange={e => setCargoPartnerForm({...cargoPartnerForm,contact_email:e.target.value})}/></label></div><div className="cg-two-fields"><label>Délai minimum (jours)<input type="number" min="1" value={cargoPartnerForm.estimated_days_min} onChange={e => setCargoPartnerForm({...cargoPartnerForm,estimated_days_min:e.target.value})}/></label><label>Délai maximum (jours)<input type="number" min="1" value={cargoPartnerForm.estimated_days_max} onChange={e => setCargoPartnerForm({...cargoPartnerForm,estimated_days_max:e.target.value})}/></label></div><label>Tarifs / conditions<textarea value={cargoPartnerForm.pricing_notes} onChange={e => setCargoPartnerForm({...cargoPartnerForm,pricing_notes:e.target.value})} placeholder="Ex. tarif au kg, minimum facturable, frais locaux…"/></label><label>Instructions<textarea value={cargoPartnerForm.instructions} onChange={e => setCargoPartnerForm({...cargoPartnerForm,instructions:e.target.value})}/></label><button className="btn btn-primary" disabled={busy}>Ajouter le transporteur <Plus/></button></form></div><div className="cg-panel"><h2>Toutes les demandes cargo</h2>{cargoRequests.map(c => <div className="cg-list-row" key={c.id}><span className="cg-list-icon"><Truck/></span><div><b>{c.cargo_partners?.name || 'À attribuer'} · {c.origin_city} → {c.destination_city}</b><small>{c.package_description} · {c.status}</small><small>{c.user_id}</small></div><select value={c.status} onChange={e => updateCargoStatus(c.id,e.target.value)}><option value="submitted">Reçue</option><option value="partner_contacted">Transporteur contacté</option><option value="quoted">Devis envoyé</option><option value="accepted">Acceptée</option><option value="in_transit">En transit</option><option value="arrived">Arrivée</option><option value="delivered">Livrée</option><option value="cancelled">Annulée</option></select></div>)}</div></>}
       {tab === 'applications' && <div className="cg-panel"><h2>Mes candidatures</h2><p>Suivez les demandes envoyées à l’équipe ChinaGo.</p>{applications.map(a => <div className="cg-list-row" key={a.id}><span className="cg-list-icon"><TrendingUp/></span><div><b>{a.account_type === 'dropshipper' ? 'Candidature dropshipping' : 'Candidature e-commerce'}</b><small>{a.business_name} · {a.status}</small></div><time>{dateLabel(a.created_at)}</time></div>)}{supplierApplications.map(a => <div className="cg-list-row" key={a.id}><span className="cg-list-icon"><PackageCheck/></span><div><b>Candidature fournisseur</b><small>{a.company_name} · {a.status}</small></div><time>{dateLabel(a.created_at)}</time></div>)}{!applications.length && !supplierApplications.length && <p className="cg-muted">Aucune candidature envoyée.</p>}</div>}
       </section>
     </div></main>}
