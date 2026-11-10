@@ -46,6 +46,10 @@ export default function AdminPortal() {
   const [productPriceXof,setProductPriceXof] = useState('');
   const [productCategory,setProductCategory] = useState('');
   const [productWinner,setProductWinner] = useState(true);
+  const [supplierForm,setSupplierForm] = useState({company_name:'',contact_name:'',email:'',phone:'',whatsapp:'',country:'China',website_url:'',payment_method:'Bank transfer',payment_account_name:'',payment_account_number:'',payment_bank:'',payment_wallet:'',payment_currency:'CNY',whatsapp_opt_in:false,notes:''});
+  const [manualProduct,setManualProduct] = useState({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}'});
+  const [manualImages,setManualImages] = useState([]);
+  const [manualProductOpen,setManualProductOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
