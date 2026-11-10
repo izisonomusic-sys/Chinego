@@ -233,7 +233,7 @@ export default function App() {
       const { data: extracted, error: extractionError } = await supabase.functions.invoke('preview-product', { body: { url: parsed.toString() } });
       if (!extractionError && extracted) { preview = extracted; previewMessage = extracted.message || ''; }
       else previewMessage = extractionError?.message || 'Le site ne permet pas encore la lecture automatique. ChinaGo vérifiera le lien manuellement.';
-      const sourcePlatform = preview?.source_platform || platformFromUrl(parsed.toString());
+      const sourcePlatform = ['alibaba','amazon','ebay'].includes(preview?.source_platform) ? preview.source_platform : platformFromUrl(parsed.toString());
       const payload = {
         user_id: user.id, source_url: preview?.source_url || parsed.toString(), source_platform: sourcePlatform,
         product_title: preview?.product_title || null, product_description: preview?.product_description || null,
