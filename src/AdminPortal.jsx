@@ -48,7 +48,7 @@ export default function AdminPortal() {
   const [productWinner,setProductWinner] = useState(true);
   const [productSupplierContact,setProductSupplierContact] = useState('');
   const [supplierForm,setSupplierForm] = useState({company_name:'',contact_name:'',email:'',phone:'',whatsapp:'',country:'China',website_url:'',payment_method:'Bank transfer',payment_account_name:'',payment_account_number:'',payment_bank:'',payment_wallet:'',payment_currency:'CNY',whatsapp_opt_in:false,notes:''});
-  const [manualProduct,setManualProduct] = useState({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}'});
+  const [manualProduct,setManualProduct] = useState({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}',product_variants_json:'[]',product_options_json:'[]'});
   const [manualImages,setManualImages] = useState([]);
   const [manualProductOpen,setManualProductOpen] = useState(false);
 
@@ -130,9 +130,13 @@ export default function AdminPortal() {
       if(uploadError){setError('Échec du téléversement de '+file.name+' : '+uploadError.message);setLoading(false);return;}
       uploaded.push(supabase.storage.from('chinago-product-images').getPublicUrl(path).data.publicUrl);
     }
-    let specs={};
-    try { specs=JSON.parse(manualProduct.product_specs||'{}'); if(!specs||Array.isArray(specs)||typeof specs!=='object') throw new Error(); }
-    catch { setError('Les caractéristiques complémentaires doivent être un objet JSON valide.');setLoading(false);return; }
+    let specs={},variants=[],options=[];
+    try {
+      specs=JSON.parse(manualProduct.product_specs||'{}');
+      variants=JSON.parse(manualProduct.product_variants_json||'[]');
+      options=JSON.parse(manualProduct.product_options_json||'[]');
+      if(!specs||Array.isArray(specs)||typeof specs!=='object'||!Array.isArray(variants)||!Array.isArray(options)) throw new Error();
+    } catch { setError('Les spécifications doivent être un objet JSON et les variantes/options des tableaux JSON valides.');setLoading(false);return; }
     const {data:created,error:createError}=await supabase.from('products').insert({
       title:manualProduct.title.trim(),slug,description:manualProduct.description||null,category_id:manualProduct.category_id||null,
       source_url:manualProduct.source_url||null,source_platform:manualProduct.source_url?'other':null,
@@ -141,7 +145,7 @@ export default function AdminPortal() {
       stock_quantity:manualProduct.stock_quantity===''?null:Number(manualProduct.stock_quantity),product_condition:manualProduct.product_condition||'New',
       package_dimensions:manualProduct.package_dimensions||null,package_weight:manualProduct.package_weight===''?null:Number(manualProduct.package_weight),
       warranty:manualProduct.warranty||null,certifications:manualProduct.certifications.split(',').map(x=>x.trim()).filter(Boolean),
-      product_specs:specs,minimum_order_quantity:manualProduct.minimum_order_quantity===''?null:Number(manualProduct.minimum_order_quantity),
+      product_specs:specs,product_variants:variants,product_options:options,minimum_order_quantity:manualProduct.minimum_order_quantity===''?null:Number(manualProduct.minimum_order_quantity),
       original_currency:manualProduct.original_currency||'CNY',original_price_min:manualProduct.original_price_min===''?null:Number(manualProduct.original_price_min),
       original_price_max:manualProduct.original_price_max===''?null:Number(manualProduct.original_price_max),
       price_xof:manualProduct.price_xof===''?null:Number(manualProduct.price_xof),price_cny:manualProduct.price_cny===''?null:Number(manualProduct.price_cny),
@@ -154,7 +158,7 @@ export default function AdminPortal() {
       const {error:imageError}=await supabase.from('product_images').insert(uploaded.map((image_url,index)=>({product_id:created.id,image_url,alt_text:manualProduct.title+' '+(index+1),sort_order:index})));
       if(imageError){setError('Produit enregistré, mais les images n’ont pas toutes été associées : '+imageError.message);setLoading(false);await loadData();return;}
     }
-    setManualProduct({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}'});
+    setManualProduct({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}',product_variants_json:'[]',product_options_json:'[]'});
     setManualImages([]);setManualProductOpen(false);setSuccess('Produit ajouté au catalogue avec ses images.');await loadData();setLoading(false);
   }
 
@@ -315,7 +319,7 @@ export default function AdminPortal() {
           <div className="ca-form-row"><label>Pays d’origine<input value={manualProduct.origin_country} onChange={e=>setManualProduct({...manualProduct,origin_country:e.target.value})}/></label><label>Garantie<input value={manualProduct.warranty} onChange={e=>setManualProduct({...manualProduct,warranty:e.target.value})}/></label></div>
           <div className="ca-form-row"><label>Dimensions du colis<input value={manualProduct.package_dimensions} onChange={e=>setManualProduct({...manualProduct,package_dimensions:e.target.value})} placeholder="Longueur × largeur × hauteur"/></label><label>Poids du colis (kg)<input type="number" min="0" step="0.001" value={manualProduct.package_weight} onChange={e=>setManualProduct({...manualProduct,package_weight:e.target.value})}/></label></div>
           <label>Certifications (séparées par des virgules)<input value={manualProduct.certifications} onChange={e=>setManualProduct({...manualProduct,certifications:e.target.value})}/></label>
-          <label>Autres spécifications techniques (JSON)<textarea rows="4" value={manualProduct.product_specs} onChange={e=>setManualProduct({...manualProduct,product_specs:e.target.value})}/></label>
+          <label>Variantes (JSON, ex. couleurs et tailles)<textarea rows="3" value={manualProduct.product_variants_json} onChange={e=>setManualProduct({...manualProduct,product_variants_json:e.target.value})}/></label><label>Options du produit (JSON)<textarea rows="3" value={manualProduct.product_options_json} onChange={e=>setManualProduct({...manualProduct,product_options_json:e.target.value})}/></label><label>Autres spécifications techniques (JSON)<textarea rows="4" value={manualProduct.product_specs} onChange={e=>setManualProduct({...manualProduct,product_specs:e.target.value})}/></label>
           <h3>Fournisseur et publication</h3><label>Fournisseur associé<select value={manualProduct.supplier_contact_id} onChange={e=>setManualProduct({...manualProduct,supplier_contact_id:e.target.value})}><option value="">Aucun fournisseur associé</option>{(data?.supplierContacts||[]).filter(x=>x.status==='active').map(x=><option key={x.id} value={x.id}>{x.company_name} · {x.country}</option>)}</select></label>
           <label>Lien source fournisseur<input type="url" value={manualProduct.source_url} onChange={e=>setManualProduct({...manualProduct,source_url:e.target.value})} placeholder="https://..."/></label>
           <label className="ca-winner-check"><input type="checkbox" checked={manualProduct.is_winner} onChange={e=>setManualProduct({...manualProduct,is_winner:e.target.checked})}/> Ajouter aux produits gagnants</label>
