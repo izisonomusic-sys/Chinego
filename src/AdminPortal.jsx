@@ -46,6 +46,7 @@ export default function AdminPortal() {
   const [productPriceXof,setProductPriceXof] = useState('');
   const [productCategory,setProductCategory] = useState('');
   const [productWinner,setProductWinner] = useState(true);
+  const [productSupplierContact,setProductSupplierContact] = useState('');
   const [supplierForm,setSupplierForm] = useState({company_name:'',contact_name:'',email:'',phone:'',whatsapp:'',country:'China',website_url:'',payment_method:'Bank transfer',payment_account_name:'',payment_account_number:'',payment_bank:'',payment_wallet:'',payment_currency:'CNY',whatsapp_opt_in:false,notes:''});
   const [manualProduct,setManualProduct] = useState({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}'});
   const [manualImages,setManualImages] = useState([]);
@@ -215,7 +216,12 @@ export default function AdminPortal() {
       original_currency:productPreview.original_currency || null,
       original_price_min:productPreview.original_price_min ?? null,
       original_price_max:productPreview.original_price_max ?? null,
-      supplier_company:productPreview.supplier_company || null
+      supplier_company:productPreview.supplier_company || null,supplier_contact_id:productSupplierContact || null,
+      brand:productPreview.brand || null,sku:productPreview.sku || null,model_number:productPreview.model_number || null,
+      origin_country:productPreview.origin_country || null,material:productPreview.material || null,color:productPreview.color || null,
+      size:productPreview.size || null,stock_quantity:productPreview.stock_quantity ?? null,product_condition:productPreview.product_condition || null,
+      package_dimensions:productPreview.package_dimensions || null,package_weight:productPreview.package_weight ?? null,
+      warranty:productPreview.warranty || null,certifications:productPreview.certifications || [],product_specs:productPreview.product_specs || {}
     }).select('id').single();
     if (createError) { setError(createError.message); setLoading(false); return; }
     const images = (productPreview.product_images || []).map(v=>typeof v==='string'?v:v?.image_url||v?.url).filter(Boolean);
@@ -223,7 +229,7 @@ export default function AdminPortal() {
       const {error:imageError} = await supabase.from('product_images').insert(images.map((image_url,index)=>({product_id:created.id,image_url,alt_text:title+' '+(index+1),sort_order:index})));
       if (imageError) { setError('Produit créé, mais une partie des images n’a pas été enregistrée : '+imageError.message); setLoading(false); await loadData(); return; }
     }
-    setProductUrl('');setProductPreview(null);setProductPriceXof('');setProductCategory('');setProductWinner(true);
+    setProductUrl('');setProductPreview(null);setProductPriceXof('');setProductCategory('');setProductWinner(true);setProductSupplierContact('');
     setSuccess('Produit publié dans le catalogue ChinaGo.');await loadData();setLoading(false);
   }
 
@@ -317,7 +323,7 @@ export default function AdminPortal() {
         </form>}
         </section>
         <section className="ca-card"><h2>Importer depuis Alibaba et les marketplaces</h2><p>Collez un lien pour tenter de récupérer les photos et les caractéristiques publiques.</p><form className="ca-form ca-product-import-form" onSubmit={analyzeCatalogProduct}><label>Lien Alibaba, AliExpress, Amazon ou eBay<input type="url" required value={productUrl} onChange={e=>setProductUrl(e.target.value)} placeholder="https://…"/></label><button className="ca-primary" disabled={loading}>Analyser le produit <Search size={16}/></button></form>
-          {productPreview&&<div className="ca-product-review"><div className="ca-gallery">{(productPreview.product_images||[]).map((src,i)=><img key={i} src={typeof src==='string'?src:src?.image_url||src?.url} alt={productPreview.product_title||'Produit'}/>)}</div><h3>{productPreview.product_title||'Titre non récupéré'}</h3><p>{productPreview.product_description||'Description non disponible automatiquement.'}</p><div className="ca-form-row"><label>Prix de vente ChinaGo (FCFA)<input type="number" min="0" value={productPriceXof} onChange={e=>setProductPriceXof(e.target.value)} placeholder="Prix en FCFA"/></label><label>Catégorie<select value={productCategory} onChange={e=>setProductCategory(e.target.value)}><option value="">Sans catégorie</option>{(data?.categories||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label></div><label className="ca-winner-check"><input type="checkbox" checked={productWinner} onChange={e=>setProductWinner(e.target.checked)}/> Mettre en avant dans « Produits gagnants »</label><small>Source : {productPreview.source_platform} · Extraction : {productPreview.extraction_status} · Prix fournisseur : {productPreview.original_price_min??'—'} {productPreview.original_currency||''} · Photos : {(productPreview.product_images||[]).length}</small><button className="ca-primary" onClick={publishCatalogProduct} disabled={loading||!productPreview.product_title}>Publier dans le catalogue</button></div>}
+          {productPreview&&<div className="ca-product-review"><div className="ca-gallery">{(productPreview.product_images||[]).map((src,i)=><img key={i} src={typeof src==='string'?src:src?.image_url||src?.url} alt={productPreview.product_title||'Produit'}/>)}</div><h3>{productPreview.product_title||'Titre non récupéré'}</h3><p>{productPreview.product_description||'Description non disponible automatiquement.'}</p><div className="ca-form-row"><label>Prix de vente ChinaGo (FCFA)<input type="number" min="0" value={productPriceXof} onChange={e=>setProductPriceXof(e.target.value)} placeholder="Prix en FCFA"/></label><label>Catégorie<select value={productCategory} onChange={e=>setProductCategory(e.target.value)}><option value="">Sans catégorie</option>{(data?.categories||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label></div><label>Associer à un fournisseur<select value={productSupplierContact} onChange={e=>setProductSupplierContact(e.target.value)}><option value="">Aucun fournisseur associé</option>{(data?.supplierContacts||[]).filter(x=>x.status==='active').map(x=><option key={x.id} value={x.id}>{x.company_name}</option>)}</select></label><label className="ca-winner-check"><input type="checkbox" checked={productWinner} onChange={e=>setProductWinner(e.target.checked)}/> Mettre en avant dans « Produits gagnants »</label><small>Source : {productPreview.source_platform} · Extraction : {productPreview.extraction_status} · Prix fournisseur : {productPreview.original_price_min??'—'} {productPreview.original_currency||''} · Photos : {(productPreview.product_images||[]).length}</small><button className="ca-primary" onClick={publishCatalogProduct} disabled={loading||!productPreview.product_title}>Publier dans le catalogue</button></div>}
         </section><div className="ca-grid-two"><section className="ca-card"><h2>Produits gagnants</h2><p>Produits vérifiés et mis en avant dans le catalogue.</p>{(data?.products||[]).filter(p=>p.is_winner).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status}</small></div><span className="ca-pill">Gagnant</span></div>)}</section><section className="ca-card"><h2>Produits du catalogue</h2>{(data?.products||[]).map(p=><div className="ca-row" key={p.id}><div><b>{p.title}</b><small>{money(p.price_xof)} · {p.status} · {p.is_winner?'Produit gagnant':'Standard'}</small></div></div>)}</section></div>
       </>}
     </main>
