@@ -108,7 +108,7 @@ export default function App() {
     if (p.data) {
       setProfile(p.data);
       setProfileForm({ full_name: p.data.full_name || '', phone: p.data.phone || '' });
-      if (p.data.role === 'admin' && window.location.pathname.replace(/\\/+$/, '') !== '/admin') {
+      if (p.data.role === 'admin' && window.location.pathname !== '/admin') {
         window.location.replace('/admin');
         return;
       }
