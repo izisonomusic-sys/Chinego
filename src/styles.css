@@ -180,3 +180,5 @@
 .cg-modal-gallery .cg-modal-image{grid-column:1/-1}
 .cg-product-modal ul{font-size:11px;color:#60758a;line-height:1.7;padding-left:18px}
 @media(max-width:680px){.cg-product-modal{grid-template-columns:1fr}.cg-modal-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.cg-admin-access{grid-column:1/-1;justify-self:end;color:#a9bdd2;font-size:10px;text-decoration:none;border:1px solid #34506d;border-radius:7px;padding:7px 10px}.cg-admin-access:hover{color:#fff;border-color:#ff8a00}
