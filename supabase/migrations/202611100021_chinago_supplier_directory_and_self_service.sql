@@ -27,6 +27,7 @@ create table if not exists public.supplier_contacts (
   notes text, created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
+alter table public.supplier_contacts add column if not exists supplier_application_id uuid unique references public.supplier_applications(id) on delete set null;
 alter table public.products drop constraint if exists products_supplier_contact_id_fkey;
 alter table public.products add constraint products_supplier_contact_id_fkey foreign key (supplier_contact_id) references public.supplier_contacts(id) on delete set null;
 alter table public.supplier_payments add column if not exists supplier_contact_id uuid references public.supplier_contacts(id) on delete set null;
@@ -68,6 +69,13 @@ begin
     updated_at=now()
   where id=new.user_id;
   new.status := 'approved';
+  if tg_table_name='supplier_applications' then
+    insert into public.supplier_contacts(
+      supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by
+    ) values (
+      new.id,new.company_name,new.contact_name,new.email,new.phone,new.country,new.website_url,new.message,new.user_id
+    ) on conflict (supplier_application_id) do nothing;
+  end if;
   return new;
 end;
 $$;
@@ -102,3 +110,9 @@ update public.profiles p set role='supplier',updated_at=now()
 from (select distinct on(user_id) user_id from public.supplier_applications order by user_id,created_at desc) a
 where p.id=a.user_id and p.role<>'admin';
 update public.stores set status='active',updated_at=now() where status='draft';
+
+insert into public.supplier_contacts(supplier_application_id,company_name,contact_name,email,phone,country,website_url,notes,created_by)
+select s.id,s.company_name,s.contact_name,s.email,s.phone,s.country,s.website_url,s.message,s.user_id
+from public.supplier_applications s
+where not exists(select 1 from public.supplier_contacts c where c.supplier_application_id=s.id)
+on conflict (supplier_application_id) do nothing;
