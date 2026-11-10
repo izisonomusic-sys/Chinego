@@ -105,7 +105,14 @@ export default function App() {
       supabase.from('stores').select('id,name,slug,description,platform,shopify_domain,status,created_at').eq('owner_id', currentUser.id).order('created_at', { ascending: false }),
       supabase.from('cargo_requests').select('id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50)
     ]);
-    if (p.data) { setProfile(p.data); setProfileForm({ full_name: p.data.full_name || '', phone: p.data.phone || '' }); }
+    if (p.data) {
+      setProfile(p.data);
+      setProfileForm({ full_name: p.data.full_name || '', phone: p.data.phone || '' });
+      if (p.data.role === 'admin' && window.location.pathname.replace(/\\/+$/, '') !== '/admin') {
+        window.location.replace('/admin');
+        return;
+      }
+    }
     setFavorites((f.data || []).map(x => x.product_id));
     setImports(i.data || []); setNotifications(n.data || []); setOrders(o.data || []);
     setApplications(a.data || []); setSupplierApplications(sa.data || []); setStores(s.data || []);
