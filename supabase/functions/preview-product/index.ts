@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
       break;
     }
     if (!response) return json({ error: 'Le site fournisseur n’a pas répondu.' }, 502);
-    if (!response.ok) return json({ error: 'Le site fournisseur a refusé la lecture automatique (HTTP ' + response.status + '). Vous pouvez conserver le lien et compléter les détails manuellement.' , blocked: true }, 200);
+    if (!response.ok) return json({ error: 'Le site fournisseur a refusé la lecture automatique (HTTP ' + response.status + '). Vous pouvez conserver le lien et compléter les détails manuellement.', message: 'Le site fournisseur bloque la lecture automatique. ChinaGo conservera le lien et vérifiera la fiche manuellement.', blocked: true, extraction_status: 'blocked' }, 200);
     const html = (await response.text()).slice(0, 5_000_000);
     const product = jsonLdProducts(html);
     const offers = Array.isArray(product?.offers) ? product.offers[0] : product?.offers;
