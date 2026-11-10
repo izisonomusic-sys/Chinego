@@ -113,8 +113,8 @@ export default function App() {
     if (p.data) {
       setProfile(p.data);
       setProfileForm({ full_name: p.data.full_name || '', phone: p.data.phone || '' });
-      if (p.data.role === 'admin' && window.location.pathname !== '/admin') {
-        window.location.replace('/admin');
+      if (p.data.role === 'admin' && new URLSearchParams(window.location.search).get('admin') !== '1') {
+        window.location.replace('/?admin=1');
         return;
       }
     }
