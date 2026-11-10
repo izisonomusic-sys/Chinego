@@ -188,3 +188,14 @@
 .ca-import-edit summary{font-size:11px;font-weight:800;color:#c16b09;cursor:pointer}
 .ca-import-edit .ca-form{margin-top:12px;padding:13px;background:#f7f9fb;border-radius:10px}
 .ca-import-edit .ca-form textarea{min-height:65px}
+
+.ca-manual-product-toggle{display:grid;gap:14px}
+.ca-manual-product-toggle>div:first-child{max-width:760px}
+.ca-manual-product-toggle>button{justify-self:start}
+.ca-manual-product-form{border-top:1px solid #e8edf2;padding-top:18px}
+.ca-manual-product-form h3,.ca-supplier-card h3{font:800 12px Manrope;color:#0b2d5b;margin:10px 0 0;padding-top:7px}
+.ca-manual-product-form input[type=file]{padding:10px;background:#f6f8fa}
+.ca-manual-product-form small{font-size:10px;color:#8190a0}
+.ca-supplier-card{display:grid;gap:5px;padding:12px 0;border-bottom:1px solid #edf1f5}
+.ca-supplier-card>b{font:800 12px Manrope;color:#0b2d5b}
+.ca-supplier-card>small{font-size:10px;color:#718297;line-height:1.55;overflow-wrap:anywhere}
