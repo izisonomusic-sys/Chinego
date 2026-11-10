@@ -33,3 +33,12 @@
 .cg-list-row select{max-width:170px;border:1px solid #dfe6ed;border-radius:8px;padding:8px;background:#fff;color:var(--navy);font-size:10px}
 @media(max-width:680px){.cg-three-fields{grid-template-columns:1fr 1fr}.cg-filter-row label{min-width:100%;}.cg-carrier-card{align-items:flex-start;flex-wrap:wrap}.cg-carrier-card>div{min-width:calc(100% - 60px)}.cg-carrier-card .btn{margin-left:52px}.cg-list-row select{max-width:125px}}
 @media(max-width:380px){.cg-three-fields{grid-template-columns:1fr}.cg-filter-row{display:grid}.cg-filter-row label{min-width:0}}
+
+
+.cg-admin-cargo-row{border-top:1px solid #edf1f5;padding:10px 0 18px}
+.cg-admin-cargo-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px;background:#f7f9fb;border-radius:10px}
+.cg-admin-cargo-form label{display:grid;gap:5px;font-size:10px;color:#607286;font-weight:700}
+.cg-admin-cargo-form input,.cg-admin-cargo-form select,.cg-admin-cargo-form textarea{width:100%;min-width:0;border:1px solid #dfe6ed;border-radius:8px;padding:9px;background:#fff;color:var(--navy);font:inherit}
+.cg-admin-cargo-form textarea{min-height:60px}
+.cg-admin-cargo-form button{justify-self:start;grid-column:1/-1}
+@media(max-width:680px){.cg-admin-cargo-form{grid-template-columns:1fr}.cg-admin-cargo-form button{grid-column:auto}}
