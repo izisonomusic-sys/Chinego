@@ -75,7 +75,7 @@ async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNu
     const templateLanguage = Deno.env.get('WHATSAPP_TEMPLATE_LANGUAGE') || 'en';
     if (contact.whatsapp_opt_in && contact.whatsapp && aiGenerated && token && phoneId && templateName) {
       try {
-        const version = Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v22.0';
+        const version = Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v26.0';
         const sendResponse = await fetch('https://graph.facebook.com/' + version + '/' + phoneId + '/messages', {
           method: 'POST',
           headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
