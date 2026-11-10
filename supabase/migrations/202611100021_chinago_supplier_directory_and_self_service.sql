@@ -92,3 +92,13 @@ with check (bucket_id='chinago-product-images' and exists(select 1 from public.p
 drop policy if exists "Admins delete ChinaGo product images" on storage.objects;
 create policy "Admins delete ChinaGo product images" on storage.objects for delete to authenticated
 using (bucket_id='chinago-product-images' and exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.role='admin'));
+
+update public.seller_applications set status='approved' where status='pending';
+update public.supplier_applications set status='approved' where status='pending';
+update public.profiles p set role=case when a.account_type='dropshipper' then 'dropshipper' else 'seller' end,updated_at=now()
+from (select distinct on(user_id) user_id,account_type from public.seller_applications order by user_id,created_at desc) a
+where p.id=a.user_id and p.role<>'admin';
+update public.profiles p set role='supplier',updated_at=now()
+from (select distinct on(user_id) user_id from public.supplier_applications order by user_id,created_at desc) a
+where p.id=a.user_id and p.role<>'admin';
+update public.stores set status='active',updated_at=now() where status='draft';
