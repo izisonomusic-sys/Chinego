@@ -225,6 +225,105 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       return json({ ok: true });
     }
 
+    if (body.action === 'dashboard_data') {
+      const [usersResult, ordersResult, importsResult, cargoResult, sellerResult, supplierResult, storesResult, storeProductsResult, supplierPaymentsResult, supplierMessagesResult, transactionsResult, conversationsResult, supportMessagesResult, productsResult, authUsersResult] = await Promise.all([
+        admin.from('profiles').select('id,full_name,phone,role,created_at').order('created_at', { ascending: false }).limit(500),
+        admin.from('orders').select('id,order_number,tracking_code,customer_id,status,subtotal_xof,shipping_xof,total_xof,created_at,contact_name,contact_phone,delivery_city,delivery_address,order_items(product_title,quantity)').order('created_at', { ascending: false }).limit(300),
+        admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes').order('created_at', { ascending: false }).limit(300),
+        admin.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,sender_name,sender_phone,receiver_name,receiver_phone,receiver_address,customer_notes,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(300),
+        admin.from('seller_applications').select('id,user_id,account_type,business_name,contact_name,email,phone,status,created_at').order('created_at', { ascending: false }).limit(200),
+        admin.from('supplier_applications').select('id,user_id,company_name,contact_name,email,phone,country,status,created_at').order('created_at', { ascending: false }).limit(200),
+        admin.from('stores').select('id,owner_id,name,slug,platform,status,created_at').order('created_at', { ascending: false }).limit(200),
+        admin.from('store_products').select('id,store_id,title,status,created_at,stores(name)').order('created_at', { ascending: false }).limit(300),
+        admin.from('supplier_payments').select('*').order('created_at', { ascending: false }).limit(300),
+        admin.from('supplier_messages').select('*').order('created_at', { ascending: false }).limit(300),
+        admin.from('payment_transactions').select('*').order('created_at', { ascending: false }).limit(300),
+        admin.from('support_conversations').select('*').order('updated_at', { ascending: false }).limit(300),
+        admin.from('support_messages').select('*').order('created_at', { ascending: true }).limit(1000),
+        admin.from('products').select('id,title,description,price_xof,is_winner,is_featured,status,created_at,product_images(image_url)').order('created_at', { ascending: false }).limit(300),
+        admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
+      ]);
+      const errors = [usersResult,ordersResult,importsResult,cargoResult,sellerResult,supplierResult,storesResult,storeProductsResult,supplierPaymentsResult,supplierMessagesResult,transactionsResult,conversationsResult,supportMessagesResult,productsResult].filter(x => x.error);
+      if (errors.length) return json({ error: errors[0].error.message }, 400);
+      const authUsers = authUsersResult.data?.users || [];
+      const authById = new Map(authUsers.map(u => [u.id, { email: u.email || '', last_sign_in_at: u.last_sign_in_at || null }]));
+      const users = (usersResult.data || []).map(u => ({ ...u, ...(authById.get(u.id) || {}) }));
+      const userMap = new Map(users.map(u => [u.id, u]));
+      return json({
+        users, orders: ordersResult.data || [], imports: importsResult.data || [],
+        cargo: cargoResult.data || [], sellerApplications: sellerResult.data || [],
+        supplierApplications: supplierResult.data || [], stores: storesResult.data || [],
+        storeProducts: storeProductsResult.data || [], supplierPayments: supplierPaymentsResult.data || [],
+        supplierMessages: supplierMessagesResult.data || [], transactions: transactionsResult.data || [],
+        conversations: (conversationsResult.data || []).map(c => ({ ...c, customer: userMap.get(c.user_id) || null })),
+        supportMessages: supportMessagesResult.data || [], products: productsResult.data || [],
+        counts: {
+          users: users.length, customers: users.filter(u => u.role === 'customer').length,
+          sellers: users.filter(u => ['seller','dropshipper'].includes(u.role)).length,
+          suppliers: users.filter(u => u.role === 'supplier').length,
+          orders: (ordersResult.data || []).length,
+          pendingOrders: (ordersResult.data || []).filter(o => !['delivered','cancelled','refunded'].includes(o.status)).length,
+          deliveredOrders: (ordersResult.data || []).filter(o => o.status === 'delivered').length,
+          revenueTrackedXof: (transactionsResult.data || []).filter(t => t.status === 'confirmed').reduce((sum,t) => sum + Number(t.amount_xof || 0), 0),
+          openSupport: (conversationsResult.data || []).filter(c => c.status !== 'closed').length,
+          pendingSupplierPayments: (supplierPaymentsResult.data || []).filter(p => p.status === 'due').length,
+        }
+      });
+    }
+
+    if (body.action === 'save_supplier_payment') {
+      const amount = Number(body.amount);
+      if (!String(body.supplier_name || '').trim() || !Number.isFinite(amount) || amount < 0) return json({ error: 'Fournisseur et montant valides obligatoires.' }, 400);
+      const status = ['due','paid','cancelled'].includes(body.status) ? body.status : 'due';
+      const { data, error } = await admin.from('supplier_payments').insert({
+        import_request_id: body.import_request_id || null, order_id: body.order_id || null,
+        supplier_name: String(body.supplier_name).trim(), amount, currency: String(body.currency || 'CNY'),
+        status, payment_method: body.payment_method || null, payment_reference: body.payment_reference || null,
+        proof_url: body.proof_url || null, notes: body.notes || null, created_by: userId,
+        paid_at: status === 'paid' ? new Date().toISOString() : null
+      }).select().single();
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true, payment: data });
+    }
+
+    if (body.action === 'update_supplier_payment') {
+      if (!['due','paid','cancelled'].includes(body.status)) return json({ error: 'Statut de paiement invalide.' }, 400);
+      const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString(), paid_at: body.status === 'paid' ? new Date().toISOString() : null };
+      if (body.payment_reference !== undefined) updates.payment_reference = String(body.payment_reference || '').trim() || null;
+      if (body.notes !== undefined) updates.notes = String(body.notes || '').trim() || null;
+      const { error } = await admin.from('supplier_payments').update(updates).eq('id', body.payment_id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
+    if (body.action === 'reply_support_message') {
+      const conversationId = String(body.conversation_id || '');
+      const message = String(body.message || '').trim();
+      if (!conversationId || !message) return json({ error: 'Conversation et message obligatoires.' }, 400);
+      const { data: conversation, error: conversationError } = await admin.from('support_conversations').select('id,user_id').eq('id', conversationId).single();
+      if (conversationError || !conversation) return json({ error: 'Conversation introuvable.' }, 404);
+      const { error: messageError } = await admin.from('support_messages').insert({ conversation_id: conversationId, sender_id: userId, sender_role: 'admin', body: message });
+      if (messageError) return json({ error: messageError.message }, 400);
+      await admin.from('support_conversations').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('id', conversationId);
+      await admin.from('notifications').insert({ user_id: conversation.user_id, title: 'Réponse de l’assistance ChinaGo', body: message.slice(0, 220), kind: 'support' });
+      return json({ ok: true });
+    }
+
+    if (body.action === 'log_supplier_message') {
+      const message = String(body.message_body || '').trim();
+      if (!message || (!body.order_id && !body.import_request_id)) return json({ error: 'Message et commande ou importation obligatoires.' }, 400);
+      const { error } = await admin.from('supplier_messages').insert({
+        import_request_id: body.import_request_id || null, order_id: body.order_id || null,
+        supplier_name: String(body.supplier_name || '').trim() || null,
+        supplier_whatsapp: String(body.supplier_whatsapp || '').trim() || null,
+        channel: body.channel === 'email' ? 'email' : body.channel === 'internal' ? 'internal' : 'whatsapp',
+        direction: 'outbound', message_body: message, created_by: userId,
+        sent_at: body.channel === 'internal' ? null : new Date().toISOString()
+      });
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
     return json({ error: 'Action non reconnue.' }, 400);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Erreur interne.' }, 500);
