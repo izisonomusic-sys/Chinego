@@ -109,10 +109,58 @@ export default function AdminPortal() {
     setLoading(false);
   }
 
+
+  async function saveSupplierContact(e) {
+    e.preventDefault();
+    await action({action:'save_supplier_contact',...supplierForm},'Fournisseur enregistré dans votre répertoire.');
+    setSupplierForm({company_name:'',contact_name:'',email:'',phone:'',whatsapp:'',country:'China',website_url:'',payment_method:'Bank transfer',payment_account_name:'',payment_account_number:'',payment_bank:'',payment_wallet:'',payment_currency:'CNY',whatsapp_opt_in:false,notes:''});
+  }
+
+  async function saveManualProduct(e) {
+    e.preventDefault();
+    if (!manualProduct.title.trim()) { setError('Le nom du produit est obligatoire.'); return; }
+    setLoading(true); setError(''); setSuccess('');
+    const slug=manualProduct.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+crypto.randomUUID().slice(0,8);
+    const uploaded=[];
+    for (const file of manualImages) {
+      const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'-');
+      const path='admin/'+Date.now()+'-'+crypto.randomUUID()+'-'+safe;
+      const {error:uploadError}=await supabase.storage.from('chinago-product-images').upload(path,file,{contentType:file.type,upsert:false});
+      if(uploadError){setError('Échec du téléversement de '+file.name+' : '+uploadError.message);setLoading(false);return;}
+      uploaded.push(supabase.storage.from('chinago-product-images').getPublicUrl(path).data.publicUrl);
+    }
+    let specs={};
+    try { specs=JSON.parse(manualProduct.product_specs||'{}'); if(!specs||Array.isArray(specs)||typeof specs!=='object') throw new Error(); }
+    catch { setError('Les caractéristiques complémentaires doivent être un objet JSON valide.');setLoading(false);return; }
+    const {data:created,error:createError}=await supabase.from('products').insert({
+      title:manualProduct.title.trim(),slug,description:manualProduct.description||null,category_id:manualProduct.category_id||null,
+      source_url:manualProduct.source_url||null,source_platform:manualProduct.source_url?'other':null,
+      sku:manualProduct.sku||null,brand:manualProduct.brand||null,model_number:manualProduct.model_number||null,
+      origin_country:manualProduct.origin_country||null,material:manualProduct.material||null,color:manualProduct.color||null,size:manualProduct.size||null,
+      stock_quantity:manualProduct.stock_quantity===''?null:Number(manualProduct.stock_quantity),product_condition:manualProduct.product_condition||'New',
+      package_dimensions:manualProduct.package_dimensions||null,package_weight:manualProduct.package_weight===''?null:Number(manualProduct.package_weight),
+      warranty:manualProduct.warranty||null,certifications:manualProduct.certifications.split(',').map(x=>x.trim()).filter(Boolean),
+      product_specs:specs,minimum_order_quantity:manualProduct.minimum_order_quantity===''?null:Number(manualProduct.minimum_order_quantity),
+      original_currency:manualProduct.original_currency||'CNY',original_price_min:manualProduct.original_price_min===''?null:Number(manualProduct.original_price_min),
+      original_price_max:manualProduct.original_price_max===''?null:Number(manualProduct.original_price_max),
+      price_xof:manualProduct.price_xof===''?null:Number(manualProduct.price_xof),price_cny:manualProduct.price_cny===''?null:Number(manualProduct.price_cny),
+      currency:'XOF',supplier_contact_id:manualProduct.supplier_contact_id||null,
+      supplier_company:(data?.supplierContacts||[]).find(x=>x.id===manualProduct.supplier_contact_id)?.company_name||null,
+      is_winner:manualProduct.is_winner,is_featured:manualProduct.is_winner,status:'active'
+    }).select('id').single();
+    if(createError){setError(createError.message);setLoading(false);return;}
+    if(uploaded.length){
+      const {error:imageError}=await supabase.from('product_images').insert(uploaded.map((image_url,index)=>({product_id:created.id,image_url,alt_text:manualProduct.title+' '+(index+1),sort_order:index})));
+      if(imageError){setError('Produit enregistré, mais les images n’ont pas toutes été associées : '+imageError.message);setLoading(false);await loadData();return;}
+    }
+    setManualProduct({title:'',description:'',sku:'',brand:'',model_number:'',category_id:'',origin_country:'China',material:'',color:'',size:'',stock_quantity:'',product_condition:'New',package_dimensions:'',package_weight:'',warranty:'',certifications:'',minimum_order_quantity:'',original_currency:'CNY',original_price_min:'',original_price_max:'',price_xof:'',price_cny:'',supplier_contact_id:'',source_url:'',is_winner:false,product_specs:'{}'});
+    setManualImages([]);setManualProductOpen(false);setSuccess('Produit ajouté au catalogue avec ses images.');await loadData();setLoading(false);
+  }
+
   async function saveSupplierPayment(e) {
     e.preventDefault();
-    await action({action:'save_supplier_payment',...supplierPayment,amount:Number(supplierPayment.amount)},'Paiement fournisseur enregistré.');
-    setSupplierPayment({supplier_name:'',amount:'',currency:'CNY',order_id:'',import_request_id:'',payment_method:'Virement',payment_reference:'',notes:''});
+    await action({action:'save_supplier_payment',...supplierPayment,supplier_name:data?.supplierContacts?.find(x=>x.id===supplierPayment.supplier_contact_id)?.company_name||supplierPayment.supplier_name,amount:Number(supplierPayment.amount)},'Paiement fournisseur enregistré.');
+    setSupplierPayment({supplier_contact_id:'',supplier_name:'',amount:'',currency:'CNY',order_id:'',import_request_id:'',payment_method:'Virement',payment_reference:'',notes:''});
   }
 
   async function addCustomerPayment(e) {
