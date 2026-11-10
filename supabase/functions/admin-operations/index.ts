@@ -145,14 +145,48 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const { data: request, error: readError } = await admin.from('import_requests')
         .select('id,user_id').eq('id', body.request_id).single();
       if (readError || !request) return json({ error: 'Demande d’importation introuvable.' }, 404);
+      const parseJsonArray = (value: unknown, field: string) => {
+        if (value === undefined || value === null || value === '') return [];
+        try {
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          if (!Array.isArray(parsed)) throw new Error();
+          return parsed;
+        } catch {
+          throw new Error('Le champ ' + field + ' doit être un tableau JSON valide.');
+        }
+      };
       const updates: Record<string, unknown> = {
         status: body.status,
         product_title: String(body.product_title || '').trim() || null,
         product_description: String(body.product_description || '').trim() || null,
         product_image_url: String(body.product_image_url || '').trim() || null,
+        product_images: parseJsonArray(body.product_images_json, 'photos'),
+        product_variants: parseJsonArray(body.product_variants_json, 'variantes'),
+        product_options: parseJsonArray(body.product_options_json, 'options'),
+        supplier_company: String(body.supplier_company || '').trim() || null,
+        supplier_contact_name: String(body.supplier_contact_name || '').trim() || null,
+        supplier_phone: String(body.supplier_phone || '').trim() || null,
+        supplier_whatsapp: String(body.supplier_whatsapp || '').trim() || null,
+        supplier_email: String(body.supplier_email || '').trim() || null,
+        supplier_profile_url: String(body.supplier_profile_url || '').trim() || null,
+        original_currency: String(body.original_currency || '').trim() || null,
+        extraction_status: 'admin_verified',
+        extraction_source: 'admin_manual_review',
         admin_notes: String(body.admin_notes || '').trim() || null,
         quoted_at: body.status === 'quoted' ? new Date().toISOString() : null,
       };
+      if (body.minimum_order_quantity !== undefined && body.minimum_order_quantity !== '') {
+        const minimum = Number(body.minimum_order_quantity);
+        if (!Number.isInteger(minimum) || minimum < 1) return json({ error: 'Quantité minimale invalide.' }, 400);
+        updates.minimum_order_quantity = minimum;
+      } else updates.minimum_order_quantity = null;
+      for (const field of ['original_price_min', 'original_price_max']) {
+        if (body[field] !== undefined && body[field] !== '') {
+          const amount = Number(body[field]);
+          if (!Number.isFinite(amount) || amount < 0) return json({ error: 'Prix source invalide.' }, 400);
+          updates[field] = amount;
+        } else updates[field] = null;
+      }
       const quantity = Number(body.quantity || 1);
       if (!Number.isInteger(quantity) || quantity < 1) return json({ error: 'Quantité invalide.' }, 400);
       updates.quantity = quantity;
