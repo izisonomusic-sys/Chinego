@@ -65,7 +65,9 @@ async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNu
     let status = 'awaiting_configuration';
     let errorMessage = !contact.whatsapp_opt_in
       ? 'Envoi suspendu : le fournisseur n’a pas encore donné son accord WhatsApp.'
-      : 'Brouillon prêt. Configurez les identifiants WhatsApp Business et un modèle approuvé par Meta.';
+      : (!openAiKey
+        ? 'Message standard préparé. Ajoutez OPENAI_API_KEY pour activer la rédaction IA, puis configurez WhatsApp Business.'
+        : 'Brouillon IA prêt. Configurez les identifiants WhatsApp Business et un modèle approuvé par Meta.');
     let providerMessageId = null;
     const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
     const phoneId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
@@ -298,7 +300,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         users, orders: ordersResult.data || [], imports: importsResult.data || [],
         cargo: cargoResult.data || [], sellerApplications: sellerResult.data || [],
         supplierApplications: supplierResult.data || [], stores: storesResult.data || [],
-        storeProducts: storeProductsResult.data || [], supplierPayments: supplierPaymentsResult.data || [], supplierContacts: supplierContactsResult.data || [], supplierOrderMessages: supplierOrderMessagesResult.data || [],
+        storeProducts: storeProductsResult.data || [], supplierPayments: supplierPaymentsResult.data || [], supplierContacts: supplierContactsResult.data || [], supplierOrderMessages: supplierOrderMessagesResult.data || [], automationConfig: { aiConfigured: Boolean(Deno.env.get('OPENAI_API_KEY')), whatsappConfigured: Boolean(Deno.env.get('WHATSAPP_ACCESS_TOKEN') && Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') && Deno.env.get('WHATSAPP_TEMPLATE_NAME')) },
         supplierMessages: supplierMessagesResult.data || [], transactions: transactionsResult.data || [],
         conversations: (conversationsResult.data || []).map(c => ({ ...c, customer: userMap.get(c.user_id) || null })),
         supportMessages: supportMessagesResult.data || [], products: productsResult.data || [], categories: categoriesData || [],
