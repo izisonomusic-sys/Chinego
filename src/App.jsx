@@ -38,6 +38,10 @@ export default function App() {
   const [favorites, setFavorites] = useState([]);
   const [imports, setImports] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [supportConversations, setSupportConversations] = useState([]);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [activeSupportConversation, setActiveSupportConversation] = useState('');
+  const [supportDraft, setSupportDraft] = useState('');
   const [orders, setOrders] = useState([]);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminImportRequests, setAdminImportRequests] = useState([]);
@@ -115,6 +119,14 @@ export default function App() {
     }
     setFavorites((f.data || []).map(x => x.product_id));
     setImports(i.data || []); setNotifications(n.data || []); setOrders(o.data || []);
+    const { data: conversations } = await supabase.from('support_conversations').select('id,subject,status,created_at,updated_at').eq('user_id', currentUser.id).order('updated_at', { ascending: false });
+    setSupportConversations(conversations || []);
+    if (conversations?.length) {
+      const activeId = conversations.some(x => x.id === activeSupportConversation) ? activeSupportConversation : conversations[0].id;
+      setActiveSupportConversation(activeId);
+      const { data: messages } = await supabase.from('support_messages').select('id,conversation_id,sender_id,sender_role,body,created_at').in('conversation_id', conversations.map(x => x.id)).order('created_at', { ascending: true });
+      setSupportMessages(messages || []);
+    } else { setActiveSupportConversation(''); setSupportMessages([]); }
     setApplications(a.data || []); setSupplierApplications(sa.data || []); setStores(s.data || []);
     if (p.data?.role === 'admin') {
       const [allCargo, allOrders, allSellerApps, allSupplierApps, allStores, allStoreProducts, allImports] = await Promise.all([
@@ -160,6 +172,7 @@ export default function App() {
       if (current) loadMemberData(current);
       else {
         setProfile(null); setFavorites([]); setImports([]); setNotifications([]); setOrders([]);
+        setSupportConversations([]); setSupportMessages([]); setActiveSupportConversation('');
         setApplications([]); setSupplierApplications([]); setStores([]); setStoreProducts([]); setCargoRequests([]);
         setView('home');
       }
@@ -543,6 +556,29 @@ export default function App() {
     await loadMemberData(user);
   }
 
+  async function sendSupportMessage(event) {
+    event.preventDefault();
+    if (!user || !supportDraft.trim()) return;
+    setBusy(true);
+    try {
+      let conversationId = activeSupportConversation;
+      if (!conversationId) {
+        const { data: conversation, error: conversationError } = await supabase.from('support_conversations').insert({ user_id: user.id, subject: 'Assistance ChinaGo', status: 'open' }).select('id,subject,status,created_at,updated_at').single();
+        if (conversationError) throw conversationError;
+        conversationId = conversation.id;
+        setActiveSupportConversation(conversationId);
+        setSupportConversations(old => [conversation, ...old]);
+      }
+      const { data: message, error } = await supabase.from('support_messages').insert({ conversation_id: conversationId, sender_id: user.id, sender_role: 'customer', body: supportDraft.trim() }).select('id,conversation_id,sender_id,sender_role,body,created_at').single();
+      if (error) throw error;
+      await supabase.from('support_conversations').update({ status: 'open', updated_at: new Date().toISOString() }).eq('id', conversationId);
+      setSupportMessages(old => [...old, message]); setSupportDraft('');
+      setNotice('Votre message a été envoyé à l’assistance ChinaGo.');
+      await loadMemberData(user);
+    } catch (error) { setNotice(error.message || 'Impossible d’envoyer votre message.'); }
+    finally { setBusy(false); }
+  }
+
   async function markNotificationRead(id) {
     const { error } = await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id);
     if (error) return setNotice(error.message);
@@ -561,6 +597,7 @@ export default function App() {
     { id: 'imports', label: 'Mes importations', icon: Link2 },
     { id: 'favorites', label: 'Mes favoris', icon: Heart },
     { id: 'notifications', label: 'Notifications', icon: Bell, count: unreadCount },
+    { id: 'support', label: 'Assistance ChinaGo', icon: MessageCircle },
     { id: 'orders', label: 'Mes commandes', icon: ClipboardList },
     { id: 'cargo', label: 'Transport & cargo', icon: Truck },
     { id: 'dropshipping', label: 'Dropshipping', icon: TrendingUp },
@@ -634,6 +671,8 @@ export default function App() {
       {tab === 'imports' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Nouvelle demande d’importation</h2><p>Collez le lien du produit que vous souhaitez acheter.</p></div></div><form className="cg-inline-form" onSubmit={submitImport}><input value={importUrl} onChange={e => setImportUrl(e.target.value)} placeholder="https://www.alibaba.com/..." required/><button className="btn btn-primary" disabled={busy}>Envoyer le lien <ArrowRight size={16}/></button></form><h3 className="cg-subtitle">Historique des importations</h3>{imports.length ? imports.map(i => <div className="cg-list-row" key={i.id}><span className="cg-list-icon"><Link2 size={17}/></span><div><b>{i.product_title || i.source_platform.toUpperCase()}</b><a href={i.source_url} target="_blank" rel="noreferrer">{i.source_url}</a><small>Statut : {i.status === 'quoted' ? 'Devis prêt' : i.status}</small>{(i.unit_price_xof != null || i.shipping_estimate_xof != null) && <small>Produit : {money(i.unit_price_xof)} · Transport estimé : {money(i.shipping_estimate_xof)}</small>}{i.admin_notes && <small>Note ChinaGo : {i.admin_notes}</small>}</div><time>{dateLabel(i.created_at)}</time></div>) : <p className="cg-muted">Vous n’avez pas encore envoyé de demande.</p>}</div>}
 
       {tab === 'favorites' && <div className="cg-panel"><h2>Mes produits favoris</h2><p>Vos produits sauvegardés depuis le catalogue.</p>{products.filter(p => favorites.includes(p.id)).length ? <div className="product-grid">{products.filter(p => favorites.includes(p.id)).map(productCard)}</div> : <p className="cg-muted">Aucun favori enregistré. Explorez le catalogue et appuyez sur le cœur d’un produit.</p>}</div>}
+
+      {tab === 'support' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Assistance ChinaGo</h2><p>Posez vos questions ou signalez un problème. Notre équipe vous répondra ici.</p></div></div><div className="cg-support-thread">{supportMessages.filter(m => m.conversation_id === activeSupportConversation).map(m => <div className={'cg-support-bubble '+(m.sender_role === 'customer' ? 'mine' : '')} key={m.id}><small>{m.sender_role === 'admin' ? 'Équipe ChinaGo' : 'Vous'} · {dateLabel(m.created_at)}</small><p>{m.body}</p></div>)}{!supportMessages.filter(m => m.conversation_id === activeSupportConversation).length && <p className="cg-muted">Aucun échange pour le moment. Envoyez votre premier message à l’équipe.</p>}</div><form className="cg-form" onSubmit={sendSupportMessage}><label>Votre message<textarea required value={supportDraft} onChange={e => setSupportDraft(e.target.value)} placeholder="Décrivez votre problème ou votre question…"/></label><button className="btn btn-primary" disabled={busy}>Envoyer à l’assistance <MessageCircle size={16}/></button></form></div>}
 
       {tab === 'notifications' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Centre de notifications</h2><p>Les mises à jour de vos demandes et candidatures.</p></div><span className="cg-status">{unreadCount} non lue(s)</span></div>{notifications.length ? notifications.map(n => <div className={'cg-notification '+(!n.read_at?'unread':'')} key={n.id}><span className="cg-list-icon"><Bell size={18}/></span><div><b>{n.title}</b><p>{n.body}</p><small>{dateLabel(n.created_at)}</small></div>{!n.read_at && <button className="cg-text-button" onClick={() => markNotificationRead(n.id)}><Check size={15}/> Marquer comme lue</button>}</div>) : <p className="cg-muted">Aucune notification pour le moment.</p>}</div>}
 
