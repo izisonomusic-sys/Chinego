@@ -103,6 +103,15 @@ Deno.serve(async (req: Request) => {
     })) : [];
     const brand = clean(product?.brand?.name || product?.brand);
     const availability = clean(offers?.availability);
+    const specifications = Array.isArray(product?.additionalProperty) ? product.additionalProperty.reduce((acc: Record<string,string>, item: any) => {
+      const name = clean(item?.name);
+      const value = clean(item?.value);
+      if (name && value) acc[name] = value;
+      return acc;
+    }, {}) : {};
+    const weight = product?.weight?.value ?? product?.weight ?? null;
+    const dimensions = product?.size || product?.dimensions || null;
+    const condition = clean(offers?.itemCondition || product?.itemCondition);
     const platform = target.hostname.includes('alibaba') ? 'alibaba' : target.hostname.includes('aliexpress') ? 'aliexpress' : target.hostname.includes('amazon') ? 'amazon' : target.hostname.includes('ebay') ? 'ebay' : 'shopify';
     const found = Boolean(title || images.length || description);
     return json({
@@ -110,9 +119,18 @@ Deno.serve(async (req: Request) => {
       product_title: title || null, product_description: description || null,
       product_images: images, product_image_url: images[0] || null,
       product_variants: variants, product_options: options,
-      original_price_min: price === null || price === undefined ? null : Number(price),
-      original_price_max: price === null || price === undefined ? null : Number(price),
-      original_currency: currency, supplier_company: brand,
+      original_price_min: offers?.lowPrice !== undefined ? Number(offers.lowPrice) : (price === null || price === undefined ? null : Number(price)),
+      original_price_max: offers?.highPrice !== undefined ? Number(offers.highPrice) : (price === null || price === undefined ? null : Number(price)),
+      original_currency: currency, supplier_company: brand, brand,
+      sku: clean(product?.sku), model_number: clean(product?.mpn || product?.model),
+      origin_country: clean(product?.countryOfOrigin?.name || product?.countryOfOrigin),
+      material: clean(product?.material), color: clean(product?.color), size: clean(product?.size),
+      stock_quantity: null, product_condition: condition,
+      package_dimensions: typeof dimensions === 'string' ? clean(dimensions) : null,
+      package_weight: typeof weight === 'number' ? weight : (typeof weight === 'string' ? Number(weight) || null : null),
+      warranty: clean(product?.warranty), certifications: [],
+      minimum_order_quantity: Number(product?.minimumOrderQuantity || specifications['Minimum Order Quantity'] || 0) || null,
+      product_specs: specifications,
       extraction_status: found ? (title && images.length ? 'extracted' : 'partial') : 'blocked',
       extraction_source: 'open_graph_jsonld',
       message: found ? 'Informations publiques récupérées. Vérifiez les variantes et le prix avec le fournisseur.' : 'Le site n’a pas exposé de fiche produit lisible automatiquement. La demande peut être vérifiée manuellement.'
