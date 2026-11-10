@@ -42,3 +42,13 @@
 .cg-admin-cargo-form textarea{min-height:60px}
 .cg-admin-cargo-form button{justify-self:start;grid-column:1/-1}
 @media(max-width:680px){.cg-admin-cargo-form{grid-template-columns:1fr}.cg-admin-cargo-form button{grid-column:auto}}
+
+
+.cg-admin-order-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;border-top:1px solid #edf1f5}
+.cg-admin-order-row>div{min-width:0;flex:1}
+.cg-admin-order-row b,.cg-admin-order-row small{display:block}
+.cg-admin-order-row b{font-size:12px;color:var(--navy)}
+.cg-admin-order-row small{font-size:10px;color:#8291a0;margin-top:4px;overflow-wrap:anywhere}
+.cg-admin-order-row select{max-width:190px;border:1px solid #dfe6ed;border-radius:8px;padding:8px;background:#fff;color:var(--navy);font-size:10px}
+.cg-admin-order-row .btn{font-size:10px;padding:8px 10px;margin:2px}
+@media(max-width:680px){.cg-admin-order-row{align-items:flex-start;flex-wrap:wrap}.cg-admin-order-row select{max-width:100%;width:100%}.cg-admin-order-row>span{width:100%}}
