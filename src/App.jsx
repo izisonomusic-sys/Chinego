@@ -504,6 +504,7 @@ export default function App() {
   }
 
   function addStorefrontCartItem(product) {
+    if(!Number(product.selling_price_xof||0))return setNotice('Le prix de ce produit doit être confirmé par la boutique avant de pouvoir l’ajouter au panier.');
     setStorefrontCart(old => { const found=old.find(x=>x.id===product.id); return found?old.map(x=>x.id===product.id?{...x,quantity:x.quantity+1}:x):[...old,{...product,quantity:1}]; });
     setNotice('Produit ajouté au panier.');
   }
