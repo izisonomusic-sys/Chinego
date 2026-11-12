@@ -74,8 +74,8 @@ begin
    v_line:=coalesce(v_product.selling_price_xof,0)*v_qty; v_subtotal:=v_subtotal+v_line;
    insert into public.order_items(order_id,store_product_id,product_title,quantity,unit_price_xof,line_total_xof,source_url)
    values(v_order,v_product.id,v_product.title,v_qty,coalesce(v_product.selling_price_xof,0),v_line,v_product.source_url);
-   insert into public.store_inventory_movements(store_product_id,store_id,quantity_change,reason,reference_id)
-   values(v_product.id,p_store_id,-v_qty,'sale_reservation',v_order);
+   insert into public.store_inventory_movements(store_product_id,store_id,movement_type,quantity_change,reason,reference_id)
+   values(v_product.id,p_store_id,'sale',-v_qty,'sale_reservation',v_order);
    v_count:=v_count+1;
  end loop;
  if v_count=0 then raise exception 'Le panier est vide'; end if;
@@ -190,7 +190,7 @@ begin
  if p_quantity<0 or p_quantity>1000000 then raise exception 'Quantité de stock invalide'; end if;
  v_delta:=p_quantity-v_product.inventory_quantity;
  update public.store_products set inventory_quantity=p_quantity,track_inventory=true,updated_at=now() where id=p_product_id;
- if v_delta<>0 then insert into public.store_inventory_movements(store_product_id,store_id,quantity_change,reason) values(p_product_id,v_product.store_id,v_delta,'manual_adjustment'); end if;
+ if v_delta<>0 then insert into public.store_inventory_movements(store_product_id,store_id,movement_type,quantity_change,reason) values(p_product_id,v_product.store_id,'manual_adjustment',v_delta,'manual_adjustment'); end if;
 end;
 $$;
 revoke all on function public.update_store_product_inventory(uuid,integer) from public,anon;
@@ -204,8 +204,8 @@ begin
  if new.status='cancelled' and old.status is distinct from 'cancelled' then
   for v_item in select oi.store_product_id,oi.quantity from public.order_items oi where oi.order_id=new.id and oi.store_product_id is not null loop
    update public.store_products set inventory_quantity=inventory_quantity+v_item.quantity,updated_at=now() where id=v_item.store_product_id and track_inventory=true;
-   insert into public.store_inventory_movements(store_product_id,store_id,quantity_change,reason,reference_id)
-   select sp.id,sp.store_id,v_item.quantity,'sale_cancelled',new.id from public.store_products sp where sp.id=v_item.store_product_id;
+   insert into public.store_inventory_movements(store_product_id,store_id,movement_type,quantity_change,reason,reference_id)
+   select sp.id,sp.store_id,'return',v_item.quantity,'sale_cancelled',new.id from public.store_products sp where sp.id=v_item.store_product_id;
   end loop;
  end if;
  return new;
