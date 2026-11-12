@@ -90,8 +90,8 @@ Deno.serve(async (req: Request) => {
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !anon || !serviceKey) return json({ error: "Configuration Supabase incomplète." }, 503);
 
+  if (new URL(req.url).searchParams.get("action") === "paydunya_ipn") return await handleIpn(req);
   const body = await req.json().catch(() => ({}));
-  if (body.action === "paydunya_ipn") return await handleIpn(req);
 
   const authorization = req.headers.get("Authorization") || "";
   if (!authorization.startsWith("Bearer ")) return json({ error: "Connexion requise." }, 401);
