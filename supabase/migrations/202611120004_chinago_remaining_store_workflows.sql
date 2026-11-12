@@ -64,6 +64,7 @@ begin
    v_qty:=greatest(1,least(1000,coalesce((v_item->>'quantity')::integer,1)));
    select * into v_product from public.store_products where id=(v_item->>'product_id')::uuid and store_id=p_store_id and status='published' for update;
    if not found then raise exception 'Un produit du panier n’est plus disponible'; end if;
+   if v_product.selling_price_xof is null or v_product.selling_price_xof<=0 then raise exception 'Le prix du produit % doit être défini avant la commande',v_product.title; end if;
    if v_product.track_inventory and not v_product.allow_backorder then
      update public.store_products set inventory_quantity=inventory_quantity-v_qty,updated_at=now()
      where id=v_product.id and inventory_quantity>=v_qty;
