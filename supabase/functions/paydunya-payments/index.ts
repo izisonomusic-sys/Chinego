@@ -137,6 +137,7 @@ Deno.serve(async (req: Request) => {
     const invoice = {
       invoice: {
         total_amount: amount,
+        channels: ["t-money-togo", "moov-togo"],
         description: "Commande " + order.order_number + " sur ChinaGo",
         items: itemMap,
         customer: {
