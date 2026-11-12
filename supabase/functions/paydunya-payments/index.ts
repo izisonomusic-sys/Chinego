@@ -154,7 +154,7 @@ Deno.serve(async (req: Request) => {
       actions: {
         return_url: baseUrl + "/?payment=success",
         cancel_url: baseUrl + "/?payment=cancelled",
-        callback_url: env("PAYDUNYA_CALLBACK_URL") || url + "/functions/v1/paydunya-payments",
+        callback_url: env("PAYDUNYA_CALLBACK_URL") || url + "/functions/v1/paydunya-payments?action=paydunya_ipn",
       },
     };
     const response = await fetch(endpoint, {
