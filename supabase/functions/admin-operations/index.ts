@@ -333,6 +333,22 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         updated_at: new Date().toISOString()
       }).eq('id', payment.id);
       if (paymentUpdateError) return json({ error: paymentUpdateError.message }, 400);
+      if (body.status === 'confirmed' && Number(payment.amount_xof) > 0) {
+        const { error: ledgerError } = await admin.from('platform_cash_ledger').upsert({
+          direction: 'credit', category: 'customer_collection', amount_xof: Number(payment.amount_xof),
+          currency: 'XOF', source_type: 'payment_transaction', source_id: payment.id,
+          description: 'Encaissement client confirmé manuellement'
+        }, { onConflict: 'source_type,source_id', ignoreDuplicates: true });
+        if (ledgerError) return json({ error: 'Paiement confirmé mais écriture de trésorerie impossible : ' + ledgerError.message }, 500);
+      }
+      if (body.status === 'refunded' && Number(payment.amount_xof) > 0) {
+        const { error: refundLedgerError } = await admin.from('platform_cash_ledger').upsert({
+          direction: 'debit', category: 'refund', amount_xof: Number(payment.amount_xof),
+          currency: 'XOF', source_type: 'payment_refund', source_id: payment.id,
+          description: 'Remboursement enregistré pour transaction ' + payment.id
+        }, { onConflict: 'source_type,source_id', ignoreDuplicates: true });
+        if (refundLedgerError) return json({ error: 'Remboursement marqué mais écriture de trésorerie impossible : ' + refundLedgerError.message }, 500);
+      }
       let supplierAutomation = null;
       if (body.status === 'confirmed' && payment.order_id) {
         const { data: order, error: orderError } = await admin.from('orders').select('id,order_number,customer_id').eq('id', payment.order_id).single();
