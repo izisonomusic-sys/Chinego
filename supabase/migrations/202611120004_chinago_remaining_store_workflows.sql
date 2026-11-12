@@ -105,7 +105,7 @@ begin
  nullif(trim(coalesce(p_beneficiary_account,'')),''),nullif(trim(coalesce(p_beneficiary_bank,'')),''),'requested',trim(p_payout_method),trim(p_beneficiary_name),
  nullif(trim(coalesce(p_beneficiary_account,'')),''),trim(p_payout_method));
  insert into public.wallet_ledger(wallet_account_id,user_id,entry_type,direction,amount,currency,reference_type,reference_id,description)
- values(v_wallet.id,v_user,'payout_reserved','debit',p_amount,v_wallet.currency,'payout_request',v_id,'Montant réservé pour une demande de retrait');
+ values(v_wallet.id,v_user,'payout_hold','debit',p_amount,v_wallet.currency,'payout_request',v_id,'Montant réservé pour une demande de retrait');
  return v_id;
 end;
 $$;
@@ -130,10 +130,10 @@ begin
  if p_status='rejected' then
    update public.wallet_accounts set available_balance=available_balance+v_request.amount,updated_at=now() where id=v_request.wallet_account_id;
    insert into public.wallet_ledger(wallet_account_id,user_id,entry_type,direction,amount,currency,reference_type,reference_id,description)
-   values(v_request.wallet_account_id,v_request.user_id,'payout_reversal','credit',v_request.amount,v_request.currency,'payout_request',v_request.id,'Remboursement automatique après échec du décaissement');
+   values(v_request.wallet_account_id,v_request.user_id,'payout_release','credit',v_request.amount,v_request.currency,'payout_request',v_request.id,'Remboursement automatique après échec du décaissement');
  elsif p_status='paid' then
-   update public.wallet_ledger set entry_type='payout_paid',description='Retrait effectué par PayDunya'
-   where wallet_account_id=v_request.wallet_account_id and reference_type='payout_request' and reference_id=v_request.id and entry_type='payout_reserved';
+   update public.wallet_ledger set entry_type='payout_release',description='Retrait effectué par PayDunya'
+   where wallet_account_id=v_request.wallet_account_id and reference_type='payout_request' and reference_id=v_request.id and entry_type='payout_hold';
  end if;
 end;
 $$;
@@ -151,7 +151,7 @@ begin
  if p_status not in ('active','revoked') then raise exception 'Statut invalide'; end if;
  if jsonb_typeof(coalesce(p_permissions,'{}'::jsonb))<>'object' then raise exception 'Permissions invalides'; end if;
  insert into public.store_members(store_id,user_id,member_role,status,permissions,invited_by,updated_at)
- values(p_store_id,p_member_user_id,'staff',p_status,coalesce(p_permissions,'{}'::jsonb),auth.uid(),now())
+ values(p_store_id,p_member_user_id,'manager',p_status,coalesce(p_permissions,'{}'::jsonb),auth.uid(),now())
  on conflict(store_id,user_id) do update set status=excluded.status,permissions=excluded.permissions,updated_at=now()
  returning id into v_id;
  return v_id;
@@ -230,7 +230,7 @@ begin
   v_earning:=greatest(0,round(v_earning*(1-least(100,greatest(0,v_rate))/100),2));
   if v_earning>0 then
    insert into public.wallet_ledger(wallet_account_id,user_id,entry_type,direction,amount,currency,reference_type,reference_id,description)
-   values(v_wallet.id,v_wallet.owner_user_id,'sale_earning','credit',v_earning,v_wallet.currency,'order',new.id,'Marge vendeur sur commande livrée')
+   values(v_wallet.id,v_wallet.owner_user_id,'sale_available','credit',v_earning,v_wallet.currency,'order',new.id,'Marge vendeur sur commande livrée')
    on conflict do nothing returning id into v_ledger_id;
    if v_ledger_id is not null then update public.wallet_accounts set available_balance=available_balance+v_earning,updated_at=now() where id=v_wallet.id; end if;
   end if;
@@ -241,8 +241,8 @@ $$;
 drop trigger if exists trg_credit_store_wallet_on_delivery on public.orders;
 create trigger trg_credit_store_wallet_on_delivery after update of status on public.orders for each row execute function public.credit_store_wallet_on_delivery();
 
-create unique index if not exists wallet_ledger_order_earning_once on public.wallet_ledger(wallet_account_id,reference_type,reference_id,entry_type)
-where reference_type='order' and entry_type='sale_earning';
+create unique index if not exists wallet_ledger_order_sale_available_once on public.wallet_ledger(wallet_account_id,reference_type,reference_id,entry_type)
+where reference_type='order' and entry_type='sale_available';
 
 drop policy if exists "staff can read permitted store products" on public.store_products;
 create policy "staff can read permitted store products" on public.store_products for select to authenticated
