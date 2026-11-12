@@ -147,13 +147,23 @@ Deno.serve(async (req: Request) => {
     let softpayPayload: Record<string, string> = { payment_token: invoice.token };
     let endpoint = "";
     const name = String(order.contact_name || authData.user.user_metadata?.full_name || "Client ChinaGo");
-    const email = String(order.contact_email || authData.user.email || "");
-    if (method === "t-money-togo") {
+    const customerEmail = String(order.contact_email || authData.user.email || "");
+    if (mode === "test") {
+      const testPassword = env("PAYDUNYA_TEST_PASSWORD");
+      if (!testPassword) return json({ error: "Mode test : ajoutez PAYDUNYA_TEST_PASSWORD et le compte fictif PayDunya dans les secrets Supabase." }, 503);
+      endpoint = base + "/softpay/checkout/make-payment";
+      softpayPayload = {
+        phone_phone: env("PAYDUNYA_TEST_PHONE") || phone,
+        customer_email: env("PAYDUNYA_TEST_EMAIL") || customerEmail,
+        password: testPassword,
+        invoice_token: invoice.token
+      };
+    } else if (method === "t-money-togo") {
       endpoint = base + "/softpay/t-money-togo";
-      softpayPayload = { name_t_money: name, email_t_money: email, phone_number: phone, payment_token: invoice.token };
+      softpayPayload = { name_t_money: name, email_t_money: customerEmail, phone_number: phone, payment_token: invoice.token };
     } else {
       endpoint = base + "/softpay/moov-togo";
-      softpayPayload = { moov_togo_customer_fullname: name, moov_togo_email: email, moov_togo_customer_address: String(order.delivery_city || "Lome"), moov_togo_phone_number: phone, payment_token: invoice.token };
+      softpayPayload = { moov_togo_customer_fullname: name, moov_togo_email: customerEmail, moov_togo_customer_address: String(order.delivery_city || "Lome"), moov_togo_phone_number: phone, payment_token: invoice.token };
     }
     const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(softpayPayload), signal: AbortSignal.timeout(30000) });
     const result = await response.json().catch(() => ({}));
