@@ -34,14 +34,14 @@ returns trigger language plpgsql security definer set search_path=''
 as $$
 begin
   insert into public.wallet_accounts(owner_user_id,store_id,account_type,currency,status)
-  values(new.owner_id,new.id,'seller',coalesce(new.currency,'XOF'),'active') on conflict do nothing;
+  values(new.owner_id,new.id,'seller','XOF','active') on conflict do nothing;
   return new;
 end;
 $$;
 drop trigger if exists trg_ensure_store_wallet on public.stores;
 create trigger trg_ensure_store_wallet after insert on public.stores for each row execute function public.ensure_store_wallet();
 insert into public.wallet_accounts(owner_user_id,store_id,account_type,currency,status)
-select s.owner_id,s.id,'seller',coalesce(s.currency,'XOF'),'active' from public.stores s
+select s.owner_id,s.id,'seller','XOF','active' from public.stores s
 where not exists(select 1 from public.wallet_accounts w where w.store_id=s.id) on conflict do nothing;
 
 create or replace function public.create_store_cart_order(
