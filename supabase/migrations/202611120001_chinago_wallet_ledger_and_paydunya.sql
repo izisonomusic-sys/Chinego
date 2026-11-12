@@ -1,0 +1,2 @@
+-- ChinaGo wallet ledger and PayDunya payment metadata
+-- Applied through Supabase migration tooling.
