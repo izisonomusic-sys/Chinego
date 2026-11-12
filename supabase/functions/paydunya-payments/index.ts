@@ -26,6 +26,106 @@ function serviceClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNumber: string) {
+  const { data: items, error: itemsError } = await admin.from('order_items')
+    .select('id,product_title,quantity,products(supplier_contact_id,title,sku,brand)')
+    .eq('order_id', orderId);
+  if (itemsError) throw new Error(itemsError.message);
+  const groups = new Map<string, any[]>();
+  for (const item of items || []) {
+    const contactId = item.products?.supplier_contact_id;
+    if (!contactId) continue;
+    groups.set(contactId, [...(groups.get(contactId) || []), item]);
+  }
+  if (!groups.size) return { prepared: 0, skipped: 'Aucun produit de cette commande n’est lié à un fournisseur enregistré.' };
+  const { data: contacts, error: contactsError } = await admin.from('supplier_contacts')
+    .select('id,company_name,contact_name,whatsapp,whatsapp_opt_in,status')
+    .in('id', [...groups.keys()]);
+  if (contactsError) throw new Error(contactsError.message);
+  let prepared = 0;
+  for (const contact of contacts || []) {
+    if (contact.status !== 'active') continue;
+    const products = groups.get(contact.id) || [];
+    const productLines = products.map((item: any) =>
+      (item.product_title || item.products?.title) + ' × ' + item.quantity + (item.products?.sku ? ' (SKU ' + item.products.sku + ')' : '')
+    ).join('\n');
+    const fallback = 'Hello ' + (contact.contact_name || contact.company_name) + ',\n\nChinaGo has received order ' + orderNumber + ' for the following products:\n' + productLines + '\n\nPlease confirm availability, final unit prices, preparation time, packaging details and the earliest dispatch date. Please do not ship before ChinaGo confirms the next step.\n\nThank you,\nChinaGo Purchasing Team';
+    let message = fallback;
+    let aiGenerated = false;
+    const openAiKey = Deno.env.get('OPENAI_API_KEY');
+    if (openAiKey) {
+      try {
+        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + openAiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            temperature: 0.3,
+            messages: [
+              { role: 'system', content: 'You are ChinaGo purchasing assistant. Write concise, professional supplier messages in English. Never invent facts, prices, payment confirmations, addresses, or delivery promises. Ask the supplier to confirm stock, price, packaging, preparation time and dispatch date.' },
+              { role: 'user', content: 'Write a supplier message for ChinaGo order ' + orderNumber + '. Supplier: ' + contact.company_name + '. Products and quantities:\n' + productLines }
+            ]
+          })
+        });
+        const aiData = await aiResponse.json();
+        const generated = aiData.choices?.[0]?.message?.content?.trim();
+        if (aiResponse.ok && generated) { message = generated; aiGenerated = true; }
+      } catch { /* use safe fallback text */ }
+    }
+    const existing = await admin.from('supplier_order_messages').select('id,status')
+      .eq('order_id', orderId).eq('supplier_contact_id', contact.id).maybeSingle();
+    if (existing.data?.status === 'sent') continue;
+    let status = 'awaiting_configuration';
+    let errorMessage = !contact.whatsapp_opt_in
+      ? 'Envoi suspendu : le fournisseur n’a pas encore donné son accord WhatsApp.'
+      : (!openAiKey
+        ? 'Message standard préparé. Ajoutez OPENAI_API_KEY pour activer la rédaction IA, puis configurez WhatsApp Business.'
+        : (!aiGenerated ? 'La génération IA n’a pas abouti. Vérifiez OPENAI_API_KEY avant tout envoi.' : 'Brouillon IA prêt. Configurez les identifiants WhatsApp Business et un modèle approuvé par Meta.'));
+    let providerMessageId = null;
+    const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+    const phoneId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+    const templateName = Deno.env.get('WHATSAPP_TEMPLATE_NAME');
+    const templateLanguage = Deno.env.get('WHATSAPP_TEMPLATE_LANGUAGE') || 'en';
+    if (contact.whatsapp_opt_in && contact.whatsapp && aiGenerated && token && phoneId && templateName) {
+      try {
+        const version = Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v26.0';
+        const sendResponse = await fetch('https://graph.facebook.com/' + version + '/' + phoneId + '/messages', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: String(contact.whatsapp).replace(/[^0-9]/g, ''),
+            type: 'template',
+            template: { name: templateName, language: { code: templateLanguage }, components: [{ type: 'body', parameters: [{ type: 'text', text: message.slice(0, 1024) }] }] }
+          })
+        });
+        const sendData = await sendResponse.json();
+        if (sendResponse.ok) {
+          status = 'sent'; errorMessage = null;
+          providerMessageId = sendData.messages?.[0]?.id || null;
+        } else { status = 'failed'; errorMessage = sendData.error?.message || 'Échec de l’envoi WhatsApp.'; }
+      } catch (error) { status = 'failed'; errorMessage = error instanceof Error ? error.message : 'Erreur WhatsApp.'; }
+    }
+    const payload = {
+      order_id: orderId, supplier_contact_id: contact.id, supplier_name: contact.company_name,
+      supplier_whatsapp: contact.whatsapp, message_body: message, ai_generated: aiGenerated,
+      status, error_message: errorMessage, provider_message_id: providerMessageId,
+      sent_at: status === 'sent' ? new Date().toISOString() : null
+    };
+    const { error: saveError } = await admin.from('supplier_order_messages')
+      .upsert(payload, { onConflict: 'order_id,supplier_contact_id' });
+    if (saveError) throw new Error(saveError.message);
+    if (status === 'sent') {
+      await admin.from('supplier_messages').insert({
+        order_id: orderId, supplier_name: contact.company_name, supplier_whatsapp: contact.whatsapp,
+        channel: 'whatsapp', direction: 'outbound', message_body: message, sent_at: new Date().toISOString()
+      });
+    }
+    prepared++;
+  }
+  return { prepared };
+}
+
 async function handleIpn(req: Request) {
   const master = env("PAYDUNYA_MASTER_KEY");
   if (!master) return json({ error: "PayDunya non configuré." }, 503);
@@ -74,10 +174,19 @@ async function handleIpn(req: Request) {
       description: "Encaissement PayDunya SoftPay - commande " + transaction.order_id
     }, { onConflict: "source_type,source_id", ignoreDuplicates: true });
     if (ledgerError) return json({ error: "Paiement confirmé, mais écriture de trésorerie impossible : " + ledgerError.message }, 500);
-    const { error: orderError } = await admin.from("orders").update({
-      status: "paid", updated_at: now
-    }).eq("id", transaction.order_id).in("status", ["pending", "awaiting_payment", "quote_requested"]);
-    if (orderError) return json({ error: orderError.message }, 500);
+    const { data: order, error: orderReadError } = await admin.from("orders")
+      .select("id,order_number,customer_id,status").eq("id", transaction.order_id).maybeSingle();
+    if (orderReadError || !order) return json({ error: "Commande liée au paiement introuvable." }, 404);
+    if (order.status !== "paid") {
+      const { error: orderError } = await admin.from("orders").update({
+        status: "paid", updated_at: now
+      }).eq("id", transaction.order_id).in("status", ["pending", "awaiting_payment", "quote_requested"]);
+      if (orderError) return json({ error: orderError.message }, 500);
+      await admin.from("notifications").insert({ user_id: order.customer_id, title: "Paiement confirmé", body: "Votre paiement pour la commande " + order.order_number + " est confirmé. ChinaGo prépare votre commande.", kind: "order" });
+    }
+    try { await prepareSupplierOrderMessages(admin, order.id, order.order_number); } catch (automationError) {
+      console.error("Supplier automation after PayDunya payment:", automationError);
+    }
   }
   return json({ ok: true });
 }
