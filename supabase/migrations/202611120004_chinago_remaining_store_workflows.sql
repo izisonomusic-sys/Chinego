@@ -168,9 +168,9 @@ begin
  select * into v_order from public.orders where id=p_order_id for update;
  if not found then raise exception 'Commande introuvable'; end if;
  if not private.has_store_permission(v_order.store_id,'manage_orders') then raise exception 'Permission de gestion des commandes requise'; end if;
- if p_status not in ('processing','shipped','delivered','completed','cancelled') then raise exception 'Statut non autorisé'; end if;
- if v_order.status in ('delivered','completed','cancelled') then raise exception 'Cette commande est déjà clôturée'; end if;
- if p_status in ('processing','shipped','delivered','completed') and not exists(select 1 from public.payment_transactions pt where pt.order_id=v_order.id and pt.status='confirmed') then
+ if p_status not in ('processing','shipped','delivered','cancelled') then raise exception 'Statut non autorisé'; end if;
+ if v_order.status in ('delivered','cancelled') then raise exception 'Cette commande est déjà clôturée'; end if;
+ if p_status in ('processing','shipped','delivered') and not exists(select 1 from public.payment_transactions pt where pt.order_id=v_order.id and pt.status='confirmed') then
    raise exception 'La commande doit avoir un paiement confirmé avant son traitement ou sa livraison';
  end if;
  update public.orders set status=p_status,updated_at=now() where id=p_order_id;
@@ -219,7 +219,7 @@ returns trigger language plpgsql security definer set search_path=''
 as $$
 declare v_wallet public.wallet_accounts%rowtype; v_earning numeric(14,2); v_rate numeric:=0; v_ledger_id uuid;
 begin
- if new.status in ('delivered','completed') and old.status is distinct from new.status and new.store_id is not null
+ if new.status='delivered' and old.status is distinct from new.status and new.store_id is not null
  and exists(select 1 from public.payment_transactions pt where pt.order_id=new.id and pt.status='confirmed') then
   select * into v_wallet from public.wallet_accounts where store_id=new.store_id and status='active' limit 1;
   if not found then return new; end if;
