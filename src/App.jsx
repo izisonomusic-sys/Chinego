@@ -86,6 +86,16 @@ export default function App() {
   const [storePageForm, setStorePageForm] = useState({title:'',content:''});
   const [storeDiscountForm, setStoreDiscountForm] = useState({code:'',discount_type:'percentage',value:'',minimum_order_xof:''});
   const [storeThemeForm, setStoreThemeForm] = useState({primary:'#0B2D5B',accent:'#FF8A00',store_email:'',store_phone:'',return_policy:'',shipping_policy:''});
+  const [storefrontCart, setStorefrontCart] = useState([]);
+  const [checkoutDetails, setCheckoutDetails] = useState({contact_name:'',contact_phone:'',delivery_address:'',delivery_city:'Lomé',customer_notes:''});
+  const [walletAccounts, setWalletAccounts] = useState([]);
+  const [walletEntries, setWalletEntries] = useState([]);
+  const [payoutRequests, setPayoutRequests] = useState([]);
+  const [payoutForm, setPayoutForm] = useState({amount:'',payout_method:'T-Money',beneficiary_name:'',beneficiary_phone:'',beneficiary_account:'',beneficiary_bank:''});
+  const [storeMembers, setStoreMembers] = useState([]);
+  const [teamUserId, setTeamUserId] = useState('');
+  const [teamPermissions, setTeamPermissions] = useState({view_products:true,manage_products:false,view_orders:true,manage_orders:false,manage_pages:false,manage_discounts:false});
+  const [customDomainForm, setCustomDomainForm] = useState('');
 
   useEffect(() => {
     if (!storefrontSlug || !supabase) return;
@@ -146,7 +156,7 @@ export default function App() {
       supabase.from('orders').select('id,order_number,tracking_code,status,total_xof,created_at,store_id,delivery_city,delivery_address,order_items(product_title,quantity)').eq('customer_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('seller_applications').select('id,account_type,business_name,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
       supabase.from('supplier_applications').select('id,company_name,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
-      supabase.from('stores').select('id,name,slug,description,platform,shopify_domain,status,created_at').eq('owner_id', currentUser.id).order('created_at', { ascending: false }),
+      supabase.from('stores').select('id,owner_id,name,slug,description,platform,shopify_domain,custom_domain,custom_domain_status,status,created_at').eq('owner_id', currentUser.id).order('created_at', { ascending: false }),
       supabase.from('cargo_requests').select('id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,cargo_partners(name,whatsapp_phone)').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50)
     ]);
     if (p.data) {
@@ -167,7 +177,21 @@ export default function App() {
       const { data: messages } = await supabase.from('support_messages').select('id,conversation_id,sender_id,sender_role,body,created_at').in('conversation_id', conversations.map(x => x.id)).order('created_at', { ascending: true });
       setSupportMessages(messages || []);
     } else { setActiveSupportConversation(''); setSupportMessages([]); }
-    setApplications(a.data || []); setSupplierApplications(sa.data || []); setStores(s.data || []);
+    setApplications(a.data || []); setSupplierApplications(sa.data || []);
+    const [walletResult,ledgerResult,payoutResult] = await Promise.all([
+      supabase.from('wallet_accounts').select('*').eq('owner_user_id',currentUser.id).eq('status','active'),
+      supabase.from('wallet_ledger').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:false}).limit(50),
+      supabase.from('payout_requests').select('*').eq('user_id',currentUser.id).order('requested_at',{ascending:false}).limit(30)
+    ]);
+    setWalletAccounts(walletResult.data||[]); setWalletEntries(ledgerResult.data||[]); setPayoutRequests(payoutResult.data||[]);
+    const {data:memberIds} = await supabase.from('store_members').select('store_id').eq('user_id',currentUser.id).eq('status','active');
+    const allStoreIds=[...(s.data||[]).map(x=>x.id),...(memberIds||[]).map(x=>x.store_id)];
+    const {data:memberRows} = allStoreIds.length ? await supabase.from('store_members').select('*').in('store_id',allStoreIds) : {data:[]};
+    setStoreMembers(memberRows||[]);
+    const memberStoreIds=(memberRows||[]).filter(x=>x.status==='active').map(x=>x.store_id).filter(id=>!(s.data||[]).some(st=>st.id===id));
+    let memberStores=[];
+    if(memberStoreIds.length){const {data:ms}=await supabase.from('stores').select('id,owner_id,name,slug,description,platform,shopify_domain,custom_domain,custom_domain_status,status,created_at').in('id',memberStoreIds);memberStores=ms||[];}
+    setStores([...(s.data||[]),...memberStores]);
     const ownedStoreIds = (s.data || []).map(x => x.id);
     if (ownedStoreIds.length) {
       const [sp, sc, pg, dc] = await Promise.all([
@@ -400,7 +424,9 @@ export default function App() {
     }).select().single();
     setBusy(false);
     if (error) return setNotice(error.message);
-    setStores(old => [data, ...old]); setNotice('Votre boutique est créée et active. Vous pouvez publier vos produits immédiatement.');
+    setStores(old => [data, ...old]);
+    await supabase.from('wallet_accounts').upsert({owner_user_id:user.id,store_id:data.id,account_type:'seller',currency:'XOF',status:'active'},{onConflict:'store_id'});
+    setNotice('Votre boutique est créée et active. Le portefeuille vendeur est prêt.');
     setTab('store');
   }
 
@@ -472,6 +498,48 @@ export default function App() {
     setBusy(false);
     if (error) return setNotice(error.message);
     setNotice('Paramètres de la boutique enregistrés.'); await loadMemberData(user);
+  }
+
+  function addStorefrontCartItem(product) {
+    setStorefrontCart(old => { const found=old.find(x=>x.id===product.id); return found?old.map(x=>x.id===product.id?{...x,quantity:x.quantity+1}:x):[...old,{...product,quantity:1}]; });
+    setNotice('Produit ajouté au panier.');
+  }
+
+  async function checkoutStoreCart(event) {
+    event.preventDefault();
+    if(!user){setAuthMode('signin');setAuthOpen(true);return setNotice('Connectez-vous pour valider votre panier.');}
+    if(!publicStorefront||!storefrontCart.length)return;
+    setBusy(true);
+    const {data:orderId,error}=await supabase.rpc('create_store_cart_order',{p_store_id:publicStorefront.store.id,p_items:storefrontCart.map(x=>({product_id:x.id,quantity:x.quantity})),p_contact_name:checkoutDetails.contact_name,p_contact_phone:checkoutDetails.contact_phone,p_contact_email:user.email||'',p_delivery_address:checkoutDetails.delivery_address,p_delivery_city:checkoutDetails.delivery_city,p_customer_notes:checkoutDetails.customer_notes});
+    setBusy(false);
+    if(error)return setNotice(error.message||'Impossible de créer la commande.');
+    const {data:order,error:orderError}=await supabase.from('orders').select('id,order_number,total_xof,status').eq('id',orderId).single();
+    if(orderError)return setNotice('Commande créée. Ouvrez votre espace pour retrouver le paiement.');
+    setStorefrontCart([]);setPaymentModal({order,stage:'choose',transactionId:'',message:''});setNotice('Commande créée. Vous pouvez maintenant payer avec T-Money ou Moov Money.');
+  }
+
+  async function requestWalletPayout(event) {
+    event.preventDefault(); const wallet=walletAccounts.find(w=>w.id===payoutForm.wallet_account_id)||walletAccounts[0];
+    if(!wallet)return setNotice('Votre portefeuille vendeur sera créé avec votre boutique.');
+    setBusy(true);
+    const {error}=await supabase.rpc('request_wallet_payout',{p_wallet_account_id:wallet.id,p_amount:Number(payoutForm.amount),p_payout_method:payoutForm.payout_method,p_beneficiary_name:payoutForm.beneficiary_name,p_beneficiary_phone:payoutForm.beneficiary_phone,p_beneficiary_account:payoutForm.beneficiary_account,p_beneficiary_bank:payoutForm.beneficiary_bank});
+    setBusy(false);if(error)return setNotice(error.message);
+    setPayoutForm({amount:'',payout_method:'T-Money',beneficiary_name:'',beneficiary_phone:'',beneficiary_account:'',beneficiary_bank:''});setNotice('Demande de retrait envoyée. Elle sera vérifiée avant le transfert.');await loadMemberData(user);
+  }
+
+  async function saveCustomDomain(event) {
+    event.preventDefault();if(!activeStore)return;
+    const domain=customDomainForm.trim().toLowerCase().replace(/^https?:\\/\\//,'').replace(/\\/$/,'');
+    if(!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$/.test(domain))return setNotice('Saisissez un nom de domaine valide, par exemple boutique.mondomaine.com.');
+    setBusy(true);const {error}=await supabase.from('stores').update({custom_domain:domain,custom_domain_status:'pending'}).eq('id',activeStore.id).eq('owner_id',user.id);setBusy(false);
+    if(error)return setNotice(error.message);setNotice('Domaine enregistré. Ajoutez-le aussi dans les paramètres Render puis configurez le DNS indiqué ci-dessous.');await loadMemberData(user);
+  }
+
+  async function saveTeamMember(event) {
+    event.preventDefault();if(!activeStore)return;
+    if(!/^[0-9a-f-]{36}$/i.test(teamUserId.trim()))return setNotice('Saisissez l’identifiant UUID du compte ChinaGo du membre.');
+    setBusy(true);const {error}=await supabase.rpc('manage_store_member',{p_store_id:activeStore.id,p_member_user_id:teamUserId.trim(),p_permissions:teamPermissions,p_status:'active'});setBusy(false);
+    if(error)return setNotice(error.message);setTeamUserId('');setNotice('Membre ajouté avec les permissions sélectionnées.');await loadMemberData(user);
   }
 
   async function submitOrderRequest(event) {
@@ -738,6 +806,8 @@ export default function App() {
     { id: 'cargo', label: 'Transport & cargo', icon: Truck },
     { id: 'dropshipping', label: 'Dropshipping', icon: TrendingUp },
     { id: 'store', label: 'Ma boutique', icon: Store },
+    { id: 'wallet', label: 'Mon portefeuille', icon: Wallet },
+    { id: 'team', label: 'Personnel & permissions', icon: Users },
     { id: 'supplier', label: 'Devenir fournisseur', icon: PackageCheck },
     { id: 'applications', label: 'Mes candidatures', icon: Users },
     ...(isAdmin ? [{ id: 'admin', label: 'Administration', icon: ShieldCheck }] : [])
