@@ -14,7 +14,7 @@ const money = value => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0
 const dateLabel = value => value ? new Date(value).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const platformFromUrl = value => {
   const host = new URL(value).hostname.toLowerCase();
-  return host.includes('alibaba.') ? 'alibaba' : host.includes('amazon.') ? 'amazon' : host.includes('ebay.') ? 'ebay' : 'other';
+  return host.includes('alibaba.') ? 'alibaba' : host.includes('aliexpress.') ? 'aliexpress' : host.includes('amazon.') ? 'amazon' : host.includes('ebay.') ? 'ebay' : 'other';
 };
 const storefrontSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('store') : null;
 const storefrontDomain = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
@@ -76,6 +76,9 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [importUrl, setImportUrl] = useState('');
   const [importPreview, setImportPreview] = useState(null);
+  const [importOrderOpen, setImportOrderOpen] = useState(false);
+  const [importSelection, setImportSelection] = useState({quantity:1,color:'',size:''});
+  const [importOrderDetails, setImportOrderDetails] = useState({contact_name:'',phone:'',whatsapp:'',country:'Togo',city:'',neighborhood:'',street:'',instructions:''});
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '' });
   const [sellerForm, setSellerForm] = useState({ account_type: 'dropshipper', business_name: '', contact_name: '', email: '', phone: '', store_url: '', message: '' });
   const [supplierForm, setSupplierForm] = useState({ company_name: '', contact_name: '', email: '', phone: '', whatsapp:'', whatsapp_opt_in:false, country: 'China', website_url: '', product_categories: '', message: '' });
@@ -348,32 +351,86 @@ export default function App() {
     let parsed;
     try { parsed = new URL(importUrl.trim()); if (parsed.protocol !== 'https:') throw new Error(); }
     catch { return setNotice('Collez une adresse complète commençant par https://'); }
-    if (!user || !supabase) { setAuthMode('signin'); setAuthOpen(true); return setNotice('Connectez-vous pour enregistrer votre demande.'); }
+    if (!user || !supabase) { setAuthMode('signin'); setAuthOpen(true); return setNotice('Connectez-vous pour continuer votre demande.'); }
     setBusy(true);
     try {
       let preview = null;
       let previewMessage = '';
       const { data: extracted, error: extractionError } = await supabase.functions.invoke('preview-product', { body: { url: parsed.toString() } });
       if (!extractionError && extracted) { preview = extracted; previewMessage = extracted.message || extracted.error || ''; }
-      else previewMessage = extractionError?.message || 'Le site ne permet pas encore la lecture automatique. ChinaGo vérifiera le lien manuellement.';
-      const sourcePlatform = ['alibaba','amazon','ebay'].includes(preview?.source_platform) ? preview.source_platform : platformFromUrl(parsed.toString());
-      const payload = {
-        user_id: user.id, source_url: preview?.source_url || parsed.toString(), source_platform: sourcePlatform,
-        product_title: preview?.product_title || null, product_description: preview?.product_description || null,
-        product_image_url: preview?.product_image_url || null, product_images: preview?.product_images || [],
-        product_variants: preview?.product_variants || [], product_options: preview?.product_options || [],
-        original_price_min: preview?.original_price_min ?? null, original_price_max: preview?.original_price_max ?? null,
-        original_currency: preview?.original_currency || null, supplier_company: preview?.supplier_company || null,
+      else previewMessage = extractionError?.message || 'Le site ne permet pas encore la lecture automatique. Vous pourrez compléter les informations manquantes.';
+      const sourcePlatform = ['alibaba','aliexpress','amazon','ebay'].includes(preview?.source_platform) ? preview.source_platform : platformFromUrl(parsed.toString());
+      const normalized = {
+        ...(preview || {}),
+        source_url: preview?.source_url || parsed.toString(),
+        source_platform: sourcePlatform,
+        product_title: preview?.product_title || null,
+        product_description: preview?.product_description || null,
+        product_image_url: preview?.product_image_url || null,
+        product_images: preview?.product_images || [],
+        product_variants: preview?.product_variants || [],
+        product_options: preview?.product_options || [],
+        original_price_min: preview?.original_price_min ?? null,
+        original_price_max: preview?.original_price_max ?? null,
+        original_currency: preview?.original_currency || null,
+        supplier_company: preview?.supplier_company || null,
         extraction_status: preview?.extraction_status || 'manual_review',
-        extraction_source: preview?.extraction_source || 'manual_review'
+        extraction_source: preview?.extraction_source || 'manual_review',
+        message: previewMessage
       };
-      const { data: saved, error } = await supabase.from('import_requests').insert(payload).select('id').single();
-      if (error) throw error;
+      setImportPreview(normalized);
+      setImportSelection({quantity:Math.max(1,Number(normalized.minimum_order_quantity||1)),color:normalized.color||'',size:normalized.size||''});
+      setImportOrderDetails({contact_name:profile?.full_name||'',phone:profile?.phone||'',whatsapp:profile?.phone||'',country:'Togo',city:'',neighborhood:'',street:'',instructions:''});
       setImportUrl('');
-      setImportPreview({ ...(preview || {}), ...payload, request_id: saved.id, message: previewMessage, source_url: payload.source_url });
-      setNotice(preview?.ok ? 'Le produit a été analysé et enregistré. Vérifiez les informations ci-dessous.' : 'Le lien a été enregistré. Une vérification manuelle sera nécessaire pour compléter la fiche.');
+      setNotice(normalized.ok ? 'Fiche produit récupérée. Vérifiez les options et les informations.' : 'Le lien est reconnu, mais certaines informations devront être confirmées manuellement.');
+    } catch (error) { setNotice(error.message || 'Impossible de vérifier ce produit.'); }
+    finally { setBusy(false); }
+  }
+
+  async function confirmImportRequest(event) {
+    event.preventDefault();
+    if (!user || !supabase || !importPreview) return;
+    if (!importOrderDetails.contact_name.trim() || !importOrderDetails.phone.trim() || !importOrderDetails.whatsapp.trim() ||
+        !importOrderDetails.country.trim() || !importOrderDetails.city.trim() || !importOrderDetails.neighborhood.trim() || !importOrderDetails.street.trim()) {
+      return setNotice('Complétez votre nom, vos téléphones et toute votre adresse de livraison.');
+    }
+    setBusy(true);
+    try {
+      const payload = {
+        user_id:user.id,
+        source_url:importPreview.source_url,
+        source_platform:importPreview.source_platform,
+        product_title:importPreview.product_title,
+        product_description:importPreview.product_description,
+        product_image_url:importPreview.product_image_url,
+        product_images:importPreview.product_images||[],
+        product_variants:importPreview.product_variants||[],
+        product_options:importPreview.product_options||[],
+        original_price_min:importPreview.original_price_min??null,
+        original_price_max:importPreview.original_price_max??null,
+        original_currency:importPreview.original_currency||null,
+        supplier_company:importPreview.supplier_company||null,
+        extraction_status:importPreview.extraction_status||'manual_review',
+        extraction_source:importPreview.extraction_source||'manual_review',
+        quantity:Math.max(1,Math.min(10000,Number(importSelection.quantity)||1)),
+        selected_options:{color:importSelection.color||null,size:importSelection.size||null},
+        customer_contact_name:importOrderDetails.contact_name.trim(),
+        customer_phone:importOrderDetails.phone.trim(),
+        customer_whatsapp:importOrderDetails.whatsapp.trim(),
+        delivery_country:importOrderDetails.country.trim(),
+        delivery_city:importOrderDetails.city.trim(),
+        delivery_neighborhood:importOrderDetails.neighborhood.trim(),
+        delivery_street:importOrderDetails.street.trim(),
+        delivery_instructions:importOrderDetails.instructions.trim()||null
+      };
+      const {data:saved,error}=await supabase.from('import_requests').insert(payload).select('id').single();
+      if(error)throw error;
+      setImportOrderOpen(false);
+      setImportPreview(null);
+      setTab('imports');
+      setNotice('Votre demande ChinaGo a été enregistrée. Notre équipe va vérifier le prix final, la disponibilité et le transport avant de vous envoyer le récapitulatif de paiement.');
       await loadMemberData(user);
-    } catch (error) { setNotice(error.message || 'Impossible d’enregistrer la demande.'); }
+    } catch(error) { setNotice(error.message||'Impossible d’enregistrer votre demande.'); }
     finally { setBusy(false); }
   }
 
