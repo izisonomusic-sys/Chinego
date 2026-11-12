@@ -17,6 +17,8 @@ const platformFromUrl = value => {
   return host.includes('alibaba.') ? 'alibaba' : host.includes('amazon.') ? 'amazon' : host.includes('ebay.') ? 'ebay' : 'other';
 };
 const storefrontSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('store') : null;
+const storefrontDomain = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+const storefrontMode = Boolean(storefrontSlug || (storefrontDomain && !['chinago-tby6.onrender.com','localhost','127.0.0.1'].includes(storefrontDomain)));
 const roleLabel = role => ({ customer: 'Client', dropshipper: 'Dropshipper', seller: 'E-commerçant', supplier: 'Fournisseur', admin: 'Administrateur' }[role] || 'Client');
 
 export default function App() {
@@ -54,9 +56,9 @@ export default function App() {
   const [supplierApplications, setSupplierApplications] = useState([]);
   const [stores, setStores] = useState([]);
   const [storeProducts, setStoreProducts] = useState([]);
-  const [view, setView] = useState(storefrontSlug ? 'storefront' : 'home');
+  const [view, setView] = useState(storefrontMode ? 'storefront' : 'home');
   const [publicStorefront, setPublicStorefront] = useState(null);
-  const [storefrontLoading, setStorefrontLoading] = useState(Boolean(storefrontSlug));
+  const [storefrontLoading, setStorefrontLoading] = useState(storefrontMode);
   const [tab, setTab] = useState('overview');
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signup');
@@ -100,11 +102,13 @@ export default function App() {
   const [customDomainForm, setCustomDomainForm] = useState('');
 
   useEffect(() => {
-    if (!storefrontSlug || !supabase) return;
+    if (!storefrontMode || !supabase) return;
     let cancelled = false;
     async function loadStorefront() {
       setStorefrontLoading(true);
-      const {data:store,error:storeError} = await supabase.from('stores').select('id,name,slug,description,theme_config,store_settings,currency').eq('slug',storefrontSlug).eq('status','active').maybeSingle();
+      let storeQuery=supabase.from('stores').select('id,name,slug,description,theme_config,store_settings,currency,custom_domain').eq('status','active');
+      storeQuery=storefrontSlug?storeQuery.eq('slug',storefrontSlug):storeQuery.eq('custom_domain',storefrontDomain);
+      const {data:store,error:storeError} = await storeQuery.maybeSingle();
       if (storeError || !store) {
         if (!cancelled) { setPublicStorefront(null); setNotice('Cette boutique est introuvable ou momentanément indisponible.'); setStorefrontLoading(false); }
         return;
