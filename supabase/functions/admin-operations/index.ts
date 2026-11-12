@@ -269,7 +269,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
     }
 
     if (body.action === 'dashboard_data') {
-      const [usersResult, ordersResult, importsResult, cargoResult, sellerResult, supplierResult, storesResult, storeProductsResult, supplierPaymentsResult, supplierContactsResult, supplierOrderMessagesResult, supplierMessagesResult, transactionsResult, conversationsResult, supportMessagesResult, productsResult, authUsersResult] = await Promise.all([
+      const [usersResult, ordersResult, importsResult, cargoResult, sellerResult, supplierResult, storesResult, storeProductsResult, supplierPaymentsResult, supplierContactsResult, supplierOrderMessagesResult, supplierMessagesResult, transactionsResult, conversationsResult, supportMessagesResult, productsResult, cashLedgerResult, payoutRequestsResult, walletAccountsResult, authUsersResult] = await Promise.all([
         admin.from('profiles').select('id,full_name,phone,role,created_at').order('created_at', { ascending: false }).limit(500),
         admin.from('orders').select('id,order_number,tracking_code,customer_id,status,subtotal_xof,shipping_xof,total_xof,created_at,contact_name,contact_phone,delivery_city,delivery_address,order_items(product_title,quantity)').order('created_at', { ascending: false }).limit(300),
         admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes').order('created_at', { ascending: false }).limit(300),
@@ -286,9 +286,12 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         admin.from('support_conversations').select('*').order('updated_at', { ascending: false }).limit(300),
         admin.from('support_messages').select('*').order('created_at', { ascending: true }).limit(1000),
         admin.from('products').select('id,title,description,price_xof,is_winner,is_featured,status,created_at,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_id,brand,sku,model_number,origin_country,material,color,size,stock_quantity,product_condition,package_dimensions,package_weight,warranty,certifications,product_specs,product_images(image_url)').order('created_at', { ascending: false }).limit(300),
+        admin.from('platform_cash_ledger').select('*').order('created_at', { ascending: false }).limit(500),
+        admin.from('payout_requests').select('*').order('requested_at', { ascending: false }).limit(300),
+        admin.from('wallet_accounts').select('*').order('created_at', { ascending: false }).limit(500),
         admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
       ]);
-      const errors = [usersResult,ordersResult,importsResult,cargoResult,sellerResult,supplierResult,storesResult,storeProductsResult,supplierPaymentsResult,supplierContactsResult,supplierOrderMessagesResult,supplierMessagesResult,transactionsResult,conversationsResult,supportMessagesResult,productsResult].filter(x => x.error);
+      const errors = [usersResult,ordersResult,importsResult,cargoResult,sellerResult,supplierResult,storesResult,storeProductsResult,supplierPaymentsResult,supplierContactsResult,supplierOrderMessagesResult,supplierMessagesResult,transactionsResult,conversationsResult,supportMessagesResult,productsResult,cashLedgerResult,payoutRequestsResult,walletAccountsResult].filter(x => x.error);
       if (errors.length) return json({ error: errors[0].error.message }, 400);
       const { data: categoriesData, error: categoriesError } = await admin.from('categories').select('id,name,slug').eq('is_active', true).order('sort_order');
       if (categoriesError) return json({ error: categoriesError.message }, 400);
@@ -302,6 +305,8 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         supplierApplications: supplierResult.data || [], stores: storesResult.data || [],
         storeProducts: storeProductsResult.data || [], supplierPayments: supplierPaymentsResult.data || [], supplierContacts: supplierContactsResult.data || [], supplierOrderMessages: supplierOrderMessagesResult.data || [], automationConfig: { aiConfigured: Boolean(Deno.env.get('OPENAI_API_KEY')), whatsappConfigured: Boolean(Deno.env.get('WHATSAPP_ACCESS_TOKEN') && Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') && Deno.env.get('WHATSAPP_TEMPLATE_NAME')) },
         supplierMessages: supplierMessagesResult.data || [], transactions: transactionsResult.data || [],
+        cashLedger: cashLedgerResult.data || [], payoutRequests: payoutRequestsResult.data || [], walletAccounts: walletAccountsResult.data || [],
+        treasuryBalanceXof: (cashLedgerResult.data || []).reduce((sum: number, entry: any) => sum + (entry.direction === 'credit' ? Number(entry.amount_xof || 0) : -Number(entry.amount_xof || 0)), 0),
         conversations: (conversationsResult.data || []).map(c => ({ ...c, customer: userMap.get(c.user_id) || null })),
         supportMessages: supportMessagesResult.data || [], products: productsResult.data || [], categories: categoriesData || [],
         counts: {
@@ -388,7 +393,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const { data, error } = await admin.from('supplier_payments').insert({
         import_request_id: body.import_request_id || null, order_id: body.order_id || null,
         supplier_contact_id: body.supplier_contact_id || null,
-        supplier_name: String(body.supplier_name).trim(), amount, currency: String(body.currency || 'CNY'),
+        supplier_name: String(body.supplier_name).trim(), amount, amount_xof: Number(body.amount_xof || 0) || null, currency: String(body.currency || 'CNY'),
         status, payment_method: body.payment_method || null, payment_reference: body.payment_reference || null,
         proof_url: body.proof_url || null, notes: body.notes || null, created_by: userId,
         paid_at: status === 'paid' ? new Date().toISOString() : null
@@ -399,7 +404,14 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
 
     if (body.action === 'update_supplier_payment') {
       if (!['due','paid','cancelled'].includes(body.status)) return json({ error: 'Statut de paiement invalide.' }, 400);
-      const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString(), paid_at: body.status === 'paid' ? new Date().toISOString() : null };
+      if (body.status === 'paid') {
+        const { data: debit, error: debitError } = await admin.rpc('admin_mark_supplier_payment_paid', {
+          p_admin_user_id: userId, p_payment_id: body.payment_id
+        });
+        if (debitError) return json({ error: debitError.message }, 400);
+        return json({ ok: true, treasuryDebit: debit });
+      }
+      const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString(), paid_at: null };
       if (body.payment_reference !== undefined) updates.payment_reference = String(body.payment_reference || '').trim() || null;
       if (body.notes !== undefined) updates.notes = String(body.notes || '').trim() || null;
       const { error } = await admin.from('supplier_payments').update(updates).eq('id', body.payment_id);
