@@ -156,6 +156,12 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const { data: order, error: orderReadError } = await admin.from('orders')
         .select('id,customer_id,order_number').eq('id', body.order_id).single();
       if (orderReadError || !order) return json({ error: 'Commande introuvable.' }, 404);
+      if (body.status === 'quoted') {
+        const quotedUnit = Number(body.unit_price_xof);
+        const quotedShipping = body.shipping_estimate_xof === '' || body.shipping_estimate_xof == null ? 0 : Number(body.shipping_estimate_xof);
+        if (!Number.isFinite(quotedUnit) || quotedUnit <= 0) return json({ error: 'Saisissez un prix unitaire positif avant de publier le devis.' }, 400);
+        if (!Number.isFinite(quotedShipping) || quotedShipping < 0) return json({ error: 'Le montant du transport est invalide.' }, 400);
+      }
       const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString() };
       for (const field of ['subtotal_xof', 'shipping_xof', 'total_xof']) {
         if (body[field] !== undefined && body[field] !== null && body[field] !== '') {
@@ -186,7 +192,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const allowed = ['submitted', 'needs_details', 'quoted', 'accepted', 'rejected', 'converted'];
       if (!allowed.includes(body.status)) return json({ error: 'Statut d’importation invalide.' }, 400);
       const { data: request, error: readError } = await admin.from('import_requests')
-        .select('id,user_id').eq('id', body.request_id).single();
+        .select('id,user_id,quantity').eq('id', body.request_id).single();
       if (readError || !request) return json({ error: 'Demande d’importation introuvable.' }, 404);
       const parseJsonArray = (value: unknown, field: string) => {
         if (value === undefined || value === null || value === '') return [];
@@ -246,7 +252,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         user_id: request.user_id,
         title: body.status === 'quoted' ? 'Votre devis d’importation est prêt' : 'Mise à jour de votre importation',
         body: body.status === 'quoted'
-          ? 'Le devis de votre produit est disponible dans votre espace ChinaGo.'
+          ? 'Votre devis est prêt : produit ' + Number(body.unit_price_xof || 0) * Number(body.quantity || request.quantity || 1) + ' FCFA, transport ' + Number(body.shipping_estimate_xof || 0) + ' FCFA. Ouvrez Importations dans votre espace pour vérifier et accepter le devis.'
           : 'Votre demande d’importation a été mise à jour : ' + body.status,
         kind: 'import',
       });
@@ -272,7 +278,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const [usersResult, ordersResult, importsResult, cargoResult, sellerResult, supplierResult, storesResult, storeProductsResult, supplierPaymentsResult, supplierContactsResult, supplierOrderMessagesResult, supplierMessagesResult, transactionsResult, conversationsResult, supportMessagesResult, productsResult, cashLedgerResult, payoutRequestsResult, walletAccountsResult, authUsersResult] = await Promise.all([
         admin.from('profiles').select('id,full_name,phone,role,created_at').order('created_at', { ascending: false }).limit(500),
         admin.from('orders').select('id,order_number,tracking_code,customer_id,status,subtotal_xof,shipping_xof,total_xof,created_at,contact_name,contact_phone,delivery_city,delivery_address,order_items(product_title,quantity)').order('created_at', { ascending: false }).limit(300),
-        admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes').order('created_at', { ascending: false }).limit(300),
+        admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes,selected_options,customer_contact_name,customer_phone,customer_whatsapp,delivery_country,delivery_city,delivery_neighborhood,delivery_street,delivery_instructions').order('created_at', { ascending: false }).limit(300),
         admin.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,sender_name,sender_phone,receiver_name,receiver_phone,receiver_address,customer_notes,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(300),
         admin.from('seller_applications').select('id,user_id,account_type,business_name,contact_name,email,phone,status,created_at').order('created_at', { ascending: false }).limit(200),
         admin.from('supplier_applications').select('id,user_id,company_name,contact_name,email,phone,country,status,created_at').order('created_at', { ascending: false }).limit(200),
