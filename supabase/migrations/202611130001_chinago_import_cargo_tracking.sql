@@ -38,7 +38,7 @@ begin
     coalesce(nullif(v_import.customer_contact_name,''),v_order.contact_name,'Client ChinaGo'),
     coalesce(nullif(v_import.customer_whatsapp,''),nullif(v_import.customer_phone,''),v_order.contact_phone,''),
     concat_ws(', ',nullif(v_import.delivery_street,''),nullif(v_import.delivery_neighborhood,''),nullif(v_import.delivery_city,''),nullif(v_import.delivery_country,'')),
-    concat_ws(E'\\n','Commande ChinaGo ' || v_order.order_number,nullif(v_import.delivery_instructions,'')),
+    concat_ws(E'\n','Commande ChinaGo ' || v_order.order_number,nullif(v_import.delivery_instructions,'')),
     'submitted'
   )
   on conflict (order_id) where order_id is not null do nothing
@@ -94,7 +94,7 @@ begin
   coalesce(v_request.customer_contact_name,''),coalesce(v_request.customer_phone,''),
   concat_ws(', ',v_request.delivery_street,v_request.delivery_neighborhood,v_request.delivery_city,v_request.delivery_country),
   v_request.delivery_city,
-  concat_ws(E'\\n','Importation ChinaGo: '||coalesce(v_request.product_title,'Produit'),
+  concat_ws(E'\n','Importation ChinaGo: '||coalesce(v_request.product_title,'Produit'),
    case when v_options<>'' then 'Options choisies: '||v_options else null end,
    'WhatsApp: '||coalesce(v_request.customer_whatsapp,''),v_request.delivery_instructions),
   v_tracking);
