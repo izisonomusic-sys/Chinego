@@ -1,0 +1,1 @@
+alter table public.import_requests add column if not exists customer_whatsapp_opt_in boolean not null default false;
