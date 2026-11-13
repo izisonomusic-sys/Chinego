@@ -175,14 +175,14 @@ async function handleIpn(req: Request) {
     }, { onConflict: "source_type,source_id", ignoreDuplicates: true });
     if (ledgerError) return json({ error: "Paiement confirmé, mais écriture de trésorerie impossible : " + ledgerError.message }, 500);
     const { data: order, error: orderReadError } = await admin.from("orders")
-      .select("id,order_number,customer_id,status").eq("id", transaction.order_id).maybeSingle();
+      .select("id,order_number,customer_id,status,tracking_code").eq("id", transaction.order_id).maybeSingle();
     if (orderReadError || !order) return json({ error: "Commande liée au paiement introuvable." }, 404);
     if (order.status !== "paid") {
       const { error: orderError } = await admin.from("orders").update({
         status: "paid", updated_at: now
       }).eq("id", transaction.order_id).in("status", ["pending", "awaiting_payment", "quote_requested"]);
       if (orderError) return json({ error: orderError.message }, 500);
-      await admin.from("notifications").insert({ user_id: order.customer_id, title: "Paiement confirmé", body: "Votre paiement pour la commande " + order.order_number + " est confirmé. ChinaGo prépare votre commande.", kind: "order" });
+      await admin.from("notifications").insert({ user_id: order.customer_id, title: "Paiement confirmé", body: "Votre paiement pour la commande " + order.order_number + " est confirmé. Votre numéro de suivi ChinaGo est " + (order.tracking_code || "en cours de création") + ". Retrouvez les mises à jour dans votre profil ChinaGo.", kind: "order" });
     }
     try { await prepareSupplierOrderMessages(admin, order.id, order.order_number); } catch (automationError) {
       console.error("Supplier automation after PayDunya payment:", automationError);
