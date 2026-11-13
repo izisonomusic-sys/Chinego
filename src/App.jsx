@@ -726,7 +726,7 @@ export default function App() {
       setCargoWhatsAppUrl('https://wa.me/' + partner.whatsapp_phone.replace(/[^0-9]/g, '') + '?text=' + encodeURIComponent(message));
     } else setCargoWhatsAppUrl('');
     setNotice('Votre demande cargo est enregistrée. Vous pouvez maintenant contacter le transporteur si un numéro WhatsApp est disponible.');
-    setCargoForm({ cargo_partner_id: '', origin_city: 'Guangzhou', destination_city: 'Lomé', package_description: '', package_count: '1', weight_kg: '', dimensions: '', declared_value_xof: '', sender_name: profile?.full_name || '', sender_phone: profile?.phone || '', receiver_name: '', receiver_phone: '', receiver_address: '', customer_notes: '' });
+    setCargoForm({ cargo_partner_id: '', order_id: '', origin_city: 'Guangzhou', destination_city: 'Lomé', package_description: '', package_count: '1', weight_kg: '', dimensions: '', declared_value_xof: '', sender_name: profile?.full_name || '', sender_phone: profile?.phone || '', receiver_name: '', receiver_phone: '', receiver_address: '', customer_notes: '' });
     await loadMemberData(user);
   }
 
