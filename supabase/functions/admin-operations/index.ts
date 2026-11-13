@@ -13,6 +13,28 @@ const json = (body: unknown, status = 200) =>
   });
 
 
+async function sendCustomerOrderWhatsApp(admin: any, orderId: string, message: string) {
+  const { data: request } = await admin.from('import_requests')
+    .select('customer_whatsapp,customer_whatsapp_opt_in').eq('order_id', orderId).maybeSingle();
+  if (!request?.customer_whatsapp_opt_in || !request.customer_whatsapp) return { sent: false, reason: 'no_consent_or_number' };
+  const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+  const templateName = Deno.env.get('WHATSAPP_CUSTOMER_TEMPLATE_NAME');
+  if (!token || !phoneId || !templateName) return { sent: false, reason: 'whatsapp_not_configured' };
+  const version = Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v26.0';
+  const response = await fetch('https://graph.facebook.com/' + version + '/' + phoneId + '/messages', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp', to: String(request.customer_whatsapp).replace(/[^0-9]/g, ''), type: 'template',
+      template: { name: templateName, language: { code: Deno.env.get('WHATSAPP_CUSTOMER_TEMPLATE_LANGUAGE') || 'fr' },
+        components: [{ type: 'body', parameters: [{ type: 'text', text: message.slice(0, 1024) }] }] }
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || 'Échec de l’envoi WhatsApp client.');
+  return { sent: true, messageId: data.messages?.[0]?.id || null };
+}
+
 async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNumber: string) {
   const { data: items, error: itemsError } = await admin.from('order_items')
     .select('id,product_title,quantity,products(supplier_contact_id,title,sku,brand)')
@@ -298,20 +320,26 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
           .eq('id',cargoRequest.order_id).not('status','in','(cancelled,refunded)');
       }
       const refText = body.tracking_reference ? ' Référence de suivi cargo : ' + String(body.tracking_reference) + '.' : '';
+      const customerMessage=(labels[body.status]||'Le statut de votre transport a changé.')+refText+(body.partner_notes?' Note : '+String(body.partner_notes):'');
       await admin.from('notifications').insert({
         user_id:cargoRequest.user_id,
         title:'Mise à jour du transport de votre colis',
-        body:(labels[body.status]||'Le statut de votre transport a changé.')+refText+(body.partner_notes?' Note : '+String(body.partner_notes):''),
+        body:customerMessage,
         kind:'cargo'
       });
-      return json({ ok: true });
+      let whatsappResult = null;
+      if (cargoRequest.order_id) {
+        try { whatsappResult = await sendCustomerOrderWhatsApp(admin,cargoRequest.order_id,customerMessage); }
+        catch (whatsappError) { console.error('Customer cargo WhatsApp notification:',whatsappError); }
+      }
+      return json({ ok: true, whatsapp: whatsappResult });
     }
 
     if (body.action === 'dashboard_data') {
       const [usersResult, ordersResult, importsResult, cargoResult, sellerResult, supplierResult, storesResult, storeProductsResult, supplierPaymentsResult, supplierContactsResult, supplierOrderMessagesResult, supplierMessagesResult, transactionsResult, conversationsResult, supportMessagesResult, productsResult, cashLedgerResult, payoutRequestsResult, walletAccountsResult, authUsersResult] = await Promise.all([
         admin.from('profiles').select('id,full_name,phone,role,created_at').order('created_at', { ascending: false }).limit(500),
         admin.from('orders').select('id,order_number,tracking_code,customer_id,status,subtotal_xof,shipping_xof,total_xof,created_at,contact_name,contact_phone,delivery_city,delivery_address,order_items(product_title,quantity)').order('created_at', { ascending: false }).limit(300),
-        admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes,selected_options,customer_contact_name,customer_phone,customer_whatsapp,delivery_country,delivery_city,delivery_neighborhood,delivery_street,delivery_instructions,order_id').order('created_at', { ascending: false }).limit(300),
+        admin.from('import_requests').select('id,user_id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes,selected_options,customer_contact_name,customer_phone,customer_whatsapp,delivery_country,delivery_city,delivery_neighborhood,delivery_street,delivery_instructions,order_id,customer_whatsapp_opt_in').order('created_at', { ascending: false }).limit(300),
         admin.from('cargo_requests').select('id,user_id,order_id,cargo_partner_id,origin_city,destination_city,package_description,package_count,weight_kg,status,tracking_reference,quoted_price_xof,created_at,sender_name,sender_phone,receiver_name,receiver_phone,receiver_address,customer_notes,cargo_partners(name,whatsapp_phone)').order('created_at', { ascending: false }).limit(300),
         admin.from('seller_applications').select('id,user_id,account_type,business_name,contact_name,email,phone,status,created_at').order('created_at', { ascending: false }).limit(200),
         admin.from('supplier_applications').select('id,user_id,company_name,contact_name,email,phone,country,status,created_at').order('created_at', { ascending: false }).limit(200),
