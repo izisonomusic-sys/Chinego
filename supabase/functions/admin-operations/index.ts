@@ -154,7 +154,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         return json({ error: 'Statut de commande invalide.' }, 400);
       }
       const { data: order, error: orderReadError } = await admin.from('orders')
-        .select('id,customer_id,order_number').eq('id', body.order_id).single();
+        .select('id,customer_id,order_number,tracking_code').eq('id', body.order_id).single();
       if (orderReadError || !order) return json({ error: 'Commande introuvable.' }, 404);
       const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString() };
       for (const field of ['subtotal_xof', 'shipping_xof', 'total_xof']) {
@@ -166,12 +166,21 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       }
       const { error } = await admin.from('orders').update(updates).eq('id', body.order_id);
       if (error) return json({ error: error.message }, 400);
+      const orderStatusLabels: Record<string,string> = {
+        quote_requested:'Votre demande de devis a été reçue.',
+        pending:'Votre commande est en attente de traitement.',
+        awaiting_payment:'Votre devis est prêt. Consultez votre espace ChinaGo pour voir le montant confirmé.',
+        paid:'Votre paiement est confirmé. ChinaGo prépare votre commande.',
+        processing:'Votre commande est en cours de préparation.',
+        shipped:'Votre commande a été expédiée.',
+        delivered:'Votre commande a été marquée comme livrée.',
+        cancelled:'Votre commande a été annulée.',
+        refunded:'Le remboursement de votre commande a été enregistré.'
+      };
       await admin.from('notifications').insert({
         user_id: order.customer_id,
         title: 'Mise à jour de votre commande ' + order.order_number,
-        body: body.status === 'awaiting_payment'
-          ? 'Votre devis est prêt. Consultez votre espace ChinaGo pour voir le montant confirmé.'
-          : 'Le statut de votre commande a été mis à jour : ' + body.status,
+        body: (orderStatusLabels[body.status] || 'Le statut de votre commande a changé.') + (order.tracking_code ? ' Référence ChinaGo : ' + order.tracking_code + '.' : ''),
         kind: 'order',
       });
       let supplierAutomation = null;
@@ -286,7 +295,7 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       };
       if (cargoRequest.order_id && ['in_transit','delivered'].includes(body.status)) {
         await admin.from('orders').update({status:body.status==='delivered'?'delivered':'shipped',updated_at:new Date().toISOString()})
-          .eq('id',cargoRequest.order_id).not('status','in',['cancelled','refunded']);
+          .eq('id',cargoRequest.order_id).not('status','in','(cancelled,refunded)');
       }
       const refText = body.tracking_reference ? ' Référence de suivi cargo : ' + String(body.tracking_reference) + '.' : '';
       await admin.from('notifications').insert({
