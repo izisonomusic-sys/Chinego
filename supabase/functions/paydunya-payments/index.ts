@@ -26,6 +26,28 @@ function serviceClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+async function sendCustomerOrderWhatsApp(admin: any, orderId: string, message: string) {
+  const { data: request } = await admin.from("import_requests")
+    .select("customer_whatsapp,customer_whatsapp_opt_in").eq("order_id", orderId).maybeSingle();
+  if (!request?.customer_whatsapp_opt_in || !request.customer_whatsapp) return { sent: false, reason: "no_consent_or_number" };
+  const token = env("WHATSAPP_ACCESS_TOKEN");
+  const phoneId = env("WHATSAPP_PHONE_NUMBER_ID");
+  const templateName = env("WHATSAPP_CUSTOMER_TEMPLATE_NAME");
+  if (!token || !phoneId || !templateName) return { sent: false, reason: "whatsapp_not_configured" };
+  const version = env("WHATSAPP_GRAPH_API_VERSION") || "v26.0";
+  const response = await fetch("https://graph.facebook.com/" + version + "/" + phoneId + "/messages", {
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp", to: String(request.customer_whatsapp).replace(/[^0-9]/g, ""), type: "template",
+      template: { name: templateName, language: { code: env("WHATSAPP_CUSTOMER_TEMPLATE_LANGUAGE") || "fr" },
+        components: [{ type: "body", parameters: [{ type: "text", text: message.slice(0, 1024) }] }] }
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || "Échec de l’envoi WhatsApp client.");
+  return { sent: true, messageId: data.messages?.[0]?.id || null };
+}
 async function prepareSupplierOrderMessages(admin: any, orderId: string, orderNumber: string) {
   const { data: items, error: itemsError } = await admin.from('order_items')
     .select('id,product_title,quantity,products(supplier_contact_id,title,sku,brand)')
@@ -183,6 +205,9 @@ async function handleIpn(req: Request) {
       }).eq("id", transaction.order_id).in("status", ["pending", "awaiting_payment", "quote_requested"]);
       if (orderError) return json({ error: orderError.message }, 500);
       await admin.from("notifications").insert({ user_id: order.customer_id, title: "Paiement confirmé", body: "Votre paiement pour la commande " + order.order_number + " est confirmé. Votre numéro de suivi ChinaGo est " + (order.tracking_code || "en cours de création") + ". Retrouvez les mises à jour dans votre profil ChinaGo.", kind: "order" });
+      try {
+        await sendCustomerOrderWhatsApp(admin, order.id, "Paiement confirmé pour " + order.order_number + ". Votre référence ChinaGo : " + (order.tracking_code || "en cours de création") + ". Suivez les mises à jour dans votre espace ChinaGo.");
+      } catch (whatsappError) { console.error("Customer WhatsApp notification:", whatsappError); }
     }
     try { await prepareSupplierOrderMessages(admin, order.id, order.order_number); } catch (automationError) {
       console.error("Supplier automation after PayDunya payment:", automationError);
