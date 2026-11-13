@@ -262,6 +262,9 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
     if (body.action === 'update_cargo_request') {
       const allowed = ['submitted', 'partner_contacted', 'quoted', 'accepted', 'in_transit', 'arrived', 'delivered', 'cancelled'];
       if (!allowed.includes(body.status)) return json({ error: 'Statut cargo invalide.' }, 400);
+      const { data: cargoRequest, error: readError } = await admin.from('cargo_requests')
+        .select('id,user_id,order_id').eq('id', body.request_id).single();
+      if (readError || !cargoRequest) return json({ error: 'Demande cargo introuvable.' }, 404);
       const { error } = await admin.from('cargo_requests').update({
         status: body.status,
         cargo_partner_id: body.cargo_partner_id || null,
@@ -271,6 +274,27 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
         updated_at: new Date().toISOString(),
       }).eq('id', body.request_id);
       if (error) return json({ error: error.message }, 400);
+      const labels: Record<string,string> = {
+        submitted:'Votre demande de transport a été enregistrée.',
+        partner_contacted:'ChinaGo a contacté le partenaire cargo pour votre colis.',
+        quoted:'Le devis de transport de votre colis est disponible.',
+        accepted:'Le transport de votre colis est confirmé.',
+        in_transit:'Votre colis est maintenant en transit.',
+        arrived:'Votre colis est arrivé à destination ou au point de réception.',
+        delivered:'Votre colis a été marqué comme livré.',
+        cancelled:'Le transport de votre colis a été annulé.'
+      };
+      if (cargoRequest.order_id && ['in_transit','delivered'].includes(body.status)) {
+        await admin.from('orders').update({status:body.status==='delivered'?'delivered':'shipped',updated_at:new Date().toISOString()})
+          .eq('id',cargoRequest.order_id).not('status','in',['cancelled','refunded']);
+      }
+      const refText = body.tracking_reference ? ' Référence de suivi cargo : ' + String(body.tracking_reference) + '.' : '';
+      await admin.from('notifications').insert({
+        user_id:cargoRequest.user_id,
+        title:'Mise à jour du transport de votre colis',
+        body:(labels[body.status]||'Le statut de votre transport a changé.')+refText+(body.partner_notes?' Note : '+String(body.partner_notes):''),
+        kind:'cargo'
+      });
       return json({ ok: true });
     }
 
