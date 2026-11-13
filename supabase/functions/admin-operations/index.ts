@@ -156,12 +156,6 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const { data: order, error: orderReadError } = await admin.from('orders')
         .select('id,customer_id,order_number').eq('id', body.order_id).single();
       if (orderReadError || !order) return json({ error: 'Commande introuvable.' }, 404);
-      if (body.status === 'quoted') {
-        const quotedUnit = Number(body.unit_price_xof);
-        const quotedShipping = body.shipping_estimate_xof === '' || body.shipping_estimate_xof == null ? 0 : Number(body.shipping_estimate_xof);
-        if (!Number.isFinite(quotedUnit) || quotedUnit <= 0) return json({ error: 'Saisissez un prix unitaire positif avant de publier le devis.' }, 400);
-        if (!Number.isFinite(quotedShipping) || quotedShipping < 0) return json({ error: 'Le montant du transport est invalide.' }, 400);
-      }
       const updates: Record<string, unknown> = { status: body.status, updated_at: new Date().toISOString() };
       for (const field of ['subtotal_xof', 'shipping_xof', 'total_xof']) {
         if (body[field] !== undefined && body[field] !== null && body[field] !== '') {
@@ -194,6 +188,12 @@ const adminHandler = withSupabase({ auth: 'user' }, async (req, ctx) => {
       const { data: request, error: readError } = await admin.from('import_requests')
         .select('id,user_id,quantity').eq('id', body.request_id).single();
       if (readError || !request) return json({ error: 'Demande d’importation introuvable.' }, 404);
+      if (body.status === 'quoted') {
+        const quotedUnit = Number(body.unit_price_xof);
+        const quotedShipping = body.shipping_estimate_xof === '' || body.shipping_estimate_xof == null ? 0 : Number(body.shipping_estimate_xof);
+        if (!Number.isFinite(quotedUnit) || quotedUnit <= 0) return json({ error: 'Saisissez un prix unitaire positif avant de publier le devis.' }, 400);
+        if (!Number.isFinite(quotedShipping) || quotedShipping < 0) return json({ error: 'Le montant du transport est invalide.' }, 400);
+      }
       const parseJsonArray = (value: unknown, field: string) => {
         if (value === undefined || value === null || value === '') return [];
         try {
