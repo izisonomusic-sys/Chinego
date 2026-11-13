@@ -85,6 +85,15 @@ Deno.serve(async (req: Request) => {
     const html = (await response.text()).slice(0, 5_000_000);
     const product = jsonLdProducts(html);
     const offers = Array.isArray(product?.offers) ? product.offers[0] : product?.offers;
+    const seller = offers?.seller || product?.seller || {};
+    const contactPoint = Array.isArray(seller?.contactPoint) ? seller.contactPoint[0] : (seller?.contactPoint || {});
+    const sellerName = clean(seller?.name) || meta(html,'seller') || meta(html,'og:site_name');
+    const supplierContactName = clean(contactPoint?.name) || clean(seller?.contactName) || null;
+    const supplierPhone = clean(contactPoint?.telephone) || clean(seller?.telephone) || clean(seller?.phone) || null;
+    const supplierEmail = clean(contactPoint?.email) || clean(seller?.email) || null;
+    const supplierWhatsApp = clean(contactPoint?.whatsapp) || clean(seller?.whatsapp) || null;
+    let supplierProfileUrl = clean(seller?.url) || clean(seller?.sameAs) || null;
+    if (supplierProfileUrl) { try { supplierProfileUrl = new URL(supplierProfileUrl, target).toString(); } catch { supplierProfileUrl = null; } }
     const rawImages = [
       ...(Array.isArray(product?.image) ? product.image : product?.image ? [product.image] : []),
       meta(html,'og:image'), meta(html,'twitter:image'), meta(html,'og:image:url')
@@ -121,7 +130,14 @@ Deno.serve(async (req: Request) => {
       product_variants: variants, product_options: options,
       original_price_min: offers?.lowPrice !== undefined ? Number(offers.lowPrice) : (price === null || price === undefined ? null : Number(price)),
       original_price_max: offers?.highPrice !== undefined ? Number(offers.highPrice) : (price === null || price === undefined ? null : Number(price)),
-      original_currency: currency, supplier_company: brand, brand,
+      original_currency: currency,
+      supplier_company: sellerName || null,
+      supplier_contact_name: supplierContactName,
+      supplier_phone: supplierPhone,
+      supplier_whatsapp: supplierWhatsApp,
+      supplier_email: supplierEmail,
+      supplier_profile_url: supplierProfileUrl,
+      brand,
       sku: clean(product?.sku), model_number: clean(product?.mpn || product?.model),
       origin_country: clean(product?.countryOfOrigin?.name || product?.countryOfOrigin),
       material: clean(product?.material), color: clean(product?.color), size: clean(product?.size),
