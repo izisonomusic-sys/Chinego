@@ -160,7 +160,7 @@ export default function App() {
     const [p, f, i, n, o, a, sa, s, cr] = await Promise.all([
       supabase.from('profiles').select('id,full_name,phone,role').eq('id', currentUser.id).maybeSingle(),
       supabase.from('product_favorites').select('product_id').eq('user_id', currentUser.id),
-      supabase.from('import_requests').select('id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes,quoted_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('import_requests').select('id,source_url,source_platform,status,created_at,product_title,product_description,product_image_url,product_images,product_variants,product_options,minimum_order_quantity,original_currency,original_price_min,original_price_max,supplier_company,supplier_contact_name,supplier_phone,supplier_whatsapp,supplier_email,supplier_profile_url,extraction_status,quantity,unit_price_xof,shipping_estimate_xof,admin_notes,quoted_at,selected_options,order_id,customer_contact_name,customer_phone,customer_whatsapp,delivery_country,delivery_city,delivery_neighborhood,delivery_street').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('notifications').select('id,title,body,kind,read_at,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('orders').select('id,order_number,tracking_code,status,total_xof,created_at,store_id,delivery_city,delivery_address,order_items(product_title,quantity)').eq('customer_id', currentUser.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('seller_applications').select('id,account_type,business_name,status,created_at').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
@@ -431,6 +431,21 @@ export default function App() {
       setNotice('Votre demande ChinaGo a été enregistrée. Notre équipe va vérifier le prix final, la disponibilité et le transport avant de vous envoyer le récapitulatif de paiement.');
       await loadMemberData(user);
     } catch(error) { setNotice(error.message||'Impossible d’enregistrer votre demande.'); }
+    finally { setBusy(false); }
+  }
+
+  async function acceptImportQuote(item) {
+    if (!user || !supabase) return;
+    setBusy(true);
+    try {
+      const {data:orderId,error}=await supabase.rpc('accept_import_quote',{p_import_request_id:item.id});
+      if(error)throw error;
+      const {data:order,error:orderError}=await supabase.from('orders').select('id,order_number,total_xof,status,tracking_code,contact_phone').eq('id',orderId).single();
+      if(orderError)throw orderError;
+      setPaymentPhone(order.contact_phone||profile?.phone||'');
+      setPaymentModal({order,stage:'choose',message:'Votre devis est accepté. Vérifiez le montant et choisissez T-Money ou Moov Money pour payer.'});
+      await loadMemberData(user);
+    } catch(error) { setNotice(error.message||'Impossible de préparer le paiement du devis.'); }
     finally { setBusy(false); }
   }
 
@@ -958,7 +973,7 @@ export default function App() {
 
       {tab === 'profile' && <div className="cg-panel"><h2>Informations personnelles</h2><p>Modifiez les informations de votre compte.</p><form className="cg-form" onSubmit={saveProfile}><label>Nom complet<input value={profileForm.full_name} onChange={e => setProfileForm({...profileForm,full_name:e.target.value})} placeholder="Votre nom complet"/></label><label>Adresse e-mail<input value={user?.email || ''} disabled/></label><label>Téléphone<input value={profileForm.phone} onChange={e => setProfileForm({...profileForm,phone:e.target.value})} placeholder="+228 ..."/></label><label>Type de compte<input value={roleLabel(profile?.role)} disabled/></label><button className="btn btn-primary" disabled={busy}>Enregistrer les modifications</button></form></div>}
 
-      {tab === 'imports' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Nouvelle demande d’importation</h2><p>Collez le lien du produit que vous souhaitez acheter.</p></div></div><form className="cg-inline-form" onSubmit={submitImport}><input value={importUrl} onChange={e => setImportUrl(e.target.value)} placeholder="Collez un lien Alibaba, AliExpress, Amazon ou eBay…" required/><button className="btn btn-primary" disabled={busy}>Vérifier le produit <ArrowRight size={16}/></button></form><h3 className="cg-subtitle">Historique des importations</h3>{imports.length ? imports.map(i => <div className="cg-list-row" key={i.id}><span className="cg-list-icon"><Link2 size={17}/></span><div><b>{i.product_title || i.source_platform.toUpperCase()}</b><a href={i.source_url} target="_blank" rel="noreferrer">{i.source_url}</a><small>Statut : {i.status === 'quoted' ? 'Devis prêt' : i.status}</small>{(i.unit_price_xof != null || i.shipping_estimate_xof != null) && <small>Produit : {money(i.unit_price_xof)} · Transport estimé : {money(i.shipping_estimate_xof)}</small>}{i.admin_notes && <small>Note ChinaGo : {i.admin_notes}</small>}</div><time>{dateLabel(i.created_at)}</time></div>) : <p className="cg-muted">Vous n’avez pas encore envoyé de demande.</p>}</div>}
+      {tab === 'imports' && <div className="cg-panel"><div className="cg-panel-head"><div><h2>Nouvelle demande d’importation</h2><p>Collez le lien du produit que vous souhaitez acheter.</p></div></div><form className="cg-inline-form" onSubmit={submitImport}><input value={importUrl} onChange={e => setImportUrl(e.target.value)} placeholder="Collez un lien Alibaba, AliExpress, Amazon ou eBay…" required/><button className="btn btn-primary" disabled={busy}>Vérifier le produit <ArrowRight size={16}/></button></form><h3 className="cg-subtitle">Historique des importations</h3>{imports.length ? imports.map(i => <div className="cg-list-row" key={i.id}><span className="cg-list-icon"><Link2 size={17}/></span><div><b>{i.product_title || i.source_platform.toUpperCase()}</b><a href={i.source_url} target="_blank" rel="noreferrer">{i.source_url}</a><small>Statut : {i.status === 'quoted' ? 'Devis prêt – paiement disponible' : i.status === 'converted' ? 'Commande créée' : i.status}</small>{(i.unit_price_xof != null || i.shipping_estimate_xof != null) && <small>Produit : {money(Number(i.unit_price_xof||0)*Number(i.quantity||1))} · Transport : {money(i.shipping_estimate_xof)} · Total : {money(Number(i.unit_price_xof||0)*Number(i.quantity||1)+Number(i.shipping_estimate_xof||0))}</small>}{i.order_id && <small>Commande : {orders.find(o=>o.id===i.order_id)?.order_number||'créée'} · Suivi : {orders.find(o=>o.id===i.order_id)?.tracking_code||'en préparation'}</small>}{i.admin_notes && <small>Note ChinaGo : {i.admin_notes}</small>}{i.status==='quoted' && <button className="btn btn-primary" disabled={busy} onClick={()=>acceptImportQuote(i)}>Accepter le devis et payer <ArrowRight size={15}/></button>}</div><time>{dateLabel(i.created_at)}</time></div>) : <p className="cg-muted">Vous n’avez pas encore envoyé de demande.</p>}</div>}
 
       {tab === 'favorites' && <div className="cg-panel"><h2>Mes produits favoris</h2><p>Vos produits sauvegardés depuis le catalogue.</p>{products.filter(p => favorites.includes(p.id)).length ? <div className="product-grid">{products.filter(p => favorites.includes(p.id)).map(productCard)}</div> : <p className="cg-muted">Aucun favori enregistré. Explorez le catalogue et appuyez sur le cœur d’un produit.</p>}</div>}
 
