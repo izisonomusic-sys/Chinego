@@ -381,7 +381,7 @@ export default function App() {
       };
       setImportPreview(normalized);
       setImportSelection({quantity:Math.max(1,Number(normalized.minimum_order_quantity||1)),color:normalized.color||'',size:normalized.size||''});
-      setImportOrderDetails({contact_name:profile?.full_name||'',phone:profile?.phone||'',whatsapp:profile?.phone||'',country:'Togo',city:'',neighborhood:'',street:'',instructions:''});
+      setImportOrderDetails({contact_name:profile?.full_name||'',phone:profile?.phone||'',whatsapp:profile?.phone||'',whatsappOptIn:false,country:'Togo',city:'',neighborhood:'',street:'',instructions:''});
       setImportUrl('');
       setNotice(normalized.ok ? 'Fiche produit récupérée. Vérifiez les options et les informations.' : 'Le lien est reconnu, mais certaines informations devront être confirmées manuellement.');
     } catch (error) { setNotice(error.message || 'Impossible de vérifier ce produit.'); }
